@@ -1,4 +1,4 @@
-import { computeHeroStats, HERO_MAP } from './heroes';
+import { canForgeTalent, computeHeroStats, HERO_MAP } from './heroes';
 import type { ComputedHeroStats, HeroId, SkillRowKey, TalentAspect, UpgradeNode } from './types';
 
 export interface TooltipStatLine {
@@ -36,6 +36,9 @@ export interface UpgradeTooltipData {
   maxRank: number;
   maxed: boolean;
   canAfford: boolean;
+  rowLocked: boolean;
+  isOverclock: boolean;
+  cost: number;
   deltas: Array<{ label: string; before: string; after: string }>;
   totalEffectSummary: string;
 }
@@ -295,10 +298,12 @@ export function buildUpgradeTooltip(
 ): UpgradeTooltipData {
   const rank = upgrades[node.id] ?? 0;
   const maxed = rank >= node.maxRank;
-  const canAfford = !maxed && solar >= node.cost;
+  const checkForge = canForgeTalent(upgrades, heroId, node, solar);
+  const canAfford = checkForge.allowed;
+  const rowLocked = checkForge.reason === 'row_locked';
 
   const before = computeHeroStats(heroId, upgrades, bonusMaxHp);
-  const nextRanks = maxed ? upgrades : { ...upgrades, [node.id]: rank + 1 };
+  const nextRanks = maxed ? upgrades : { ...upgrades, [node.id]: 1 };
   const after = computeHeroStats(heroId, nextRanks, bonusMaxHp);
 
   const deltas: Array<{ label: string; before: string; after: string }> = [];
@@ -368,10 +373,11 @@ export function buildUpgradeTooltip(
     deltas.push({ label: 'Finale Burst', before: 'Off', after: 'Nova Detonation' });
   }
 
-  const totalEffectSummary =
-    rank === 0
-      ? `Not forged yet · Per rank: ${node.perRankText}`
-      : `Active (Rank ${rank}/${node.maxRank}) · ${node.perRankText} per rank`;
+  const totalEffectSummary = maxed
+    ? `Active Specialization · ${node.perRankText}`
+    : rowLocked
+      ? 'Row already specialized — forge all 4 rows to unlock Overclock.'
+      : `Single Forge (${checkForge.cost} Relic) · Instant Capstone + Stat Boost`;
 
   return {
     node,
@@ -379,6 +385,9 @@ export function buildUpgradeTooltip(
     maxRank: node.maxRank,
     maxed,
     canAfford,
+    rowLocked,
+    isOverclock: checkForge.isOverclock,
+    cost: checkForge.cost,
     deltas,
     totalEffectSummary,
   };

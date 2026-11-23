@@ -98,10 +98,15 @@ setInterval(() => {
     room.tickAccumulator += elapsed;
 
     let stepped = false;
-    while (room.tickAccumulator >= FIXED_DT) {
-      room.sim.step(FIXED_DT);
-      room.tickAccumulator -= FIXED_DT;
-      stepped = true;
+    try {
+      while (room.tickAccumulator >= FIXED_DT) {
+        room.sim.step(FIXED_DT);
+        room.tickAccumulator -= FIXED_DT;
+        stepped = true;
+      }
+    } catch (err) {
+      console.error(`[Room ${roomId}] simulation step error:`, err);
+      room.tickAccumulator = 0;
     }
 
     if (stepped) {
@@ -152,7 +157,7 @@ async function bootstrap() {
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -160,12 +165,35 @@ async function bootstrap() {
 
   const server = http.createServer(app);
 
-  // Raw low-latency WebSocket server (no perMessageDeflate compression overhead)
+  // Raw low-latency WebSocket server routed exclusively on /ws so reverse proxies & Vite never collide
   const wss = new WebSocketServer({
-    server,
-    path: '/ws',
+    noServer: true,
     perMessageDeflate: false,
   });
+
+  server.on('upgrade', (req, socket, head) => {
+    const urlPath = (req.url || '').split('?')[0];
+    if (urlPath === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+
+  // Periodic WebSocket keepalive ping so Cloud Run / Render proxies keep connections alive
+  setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.ping();
+        } catch {
+          // Ignore closed socket
+        }
+      }
+    }
+  }, 15000);
 
   wss.on('connection', (ws, req) => {
     req.socket?.setNoDelay(true);
@@ -203,8 +231,26 @@ async function bootstrap() {
         const playerName = (msg.playerName || 'Champion').trim().slice(0, 16) || 'Champion';
 
         const room = getOrCreateRoom(roomId, difficulty, heroId);
-        if (room.clients.size === 0 && room.sim.phase !== 'PLAYING') {
+        // Never trap a player joining an idle or finished match — reset cleanly!
+        if (room.sim.phase !== 'PLAYING') {
+          for (const staleWs of Array.from(room.clients.keys())) {
+            if (staleWs !== ws) {
+              sendJson(staleWs, {
+                type: 'return_to_lobby',
+                roomId,
+                reason: `New match started in Room ${roomId}.`,
+              });
+            }
+          }
+          room.clients.clear();
           room.sim.initMatch(heroId, difficulty, false);
+          room.lastTickAt = performance.now();
+          room.tickAccumulator = 0;
+        } else if (room.clients.size === 0) {
+          // Fresh match when re-entering an empty room so you don't spawn into a half-finished bot game
+          room.sim.initMatch(heroId, difficulty, false);
+          room.lastTickAt = performance.now();
+          room.tickAccumulator = 0;
         }
 
         const joined = room.sim.addHumanPlayer(heroId, playerName, msg.preferredTeam);
@@ -242,6 +288,39 @@ async function bootstrap() {
         room.sim.setHumanInput(boundClient.heroEntityId, msg.input);
       } else if (msg.type === 'buy_upgrade') {
         room.sim.buyUpgradeForHero(boundClient.heroEntityId, msg.upgradeId);
+      } else if (msg.type === 'switch_hero') {
+        const nextHeroId: HeroId = VALID_HEROES.has(msg.heroId) ? msg.heroId : boundClient.heroId;
+        const switched = room.sim.switchHumanHero(boundClient.heroEntityId, nextHeroId);
+        if (!switched) {
+          sendJson(ws, {
+            type: 'error',
+            message: 'That champion is already controlled by another player in this match.',
+          });
+          return;
+        }
+        boundClient.heroId = switched.assignedHeroId;
+        sendJson(ws, {
+          type: 'joined',
+          roomId: room.roomId,
+          playerEntityId: switched.hero.id,
+          assignedHeroId: switched.assignedHeroId,
+          team: switched.hero.team,
+          snapshot: room.sim.buildSnapshot(false),
+        });
+      } else if (msg.type === 'requeue_lobby') {
+        if (room.sim.phase !== 'PLAYING') {
+          const targetRoomId = room.roomId;
+          const requester = boundClient.playerName;
+          const allSockets = Array.from(room.clients.keys());
+          rooms.delete(targetRoomId);
+          for (const clientWs of allSockets) {
+            sendJson(clientWs, {
+              type: 'return_to_lobby',
+              roomId: targetRoomId,
+              reason: `${requester} returned Room ${targetRoomId} to Champion Select — pick your next Champion!`,
+            });
+          }
+        }
       } else if (msg.type === 'restart') {
         if (room.sim.phase !== 'PLAYING') {
           const heroId: HeroId = VALID_HEROES.has(msg.heroId) ? msg.heroId : boundClient.heroId;

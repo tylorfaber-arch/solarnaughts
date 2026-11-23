@@ -1,4 +1,4 @@
-import type { ComputedHeroStats, HeroDefinition, HeroId } from './types.ts';
+import type { ComputedHeroStats, HeroDefinition, HeroId, SkillRowKey, UpgradeNode } from './types.ts';
 
 export const KEY_ART_URL = '/src/assets/images/citadel_title_keyart_1795462454803.jpg';
 
@@ -62,7 +62,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Executioner',
         name: 'Serrated Gore-Saw',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Superheats cleaver teeth to tear into hooked prey.',
         perRankText: '+7 cleave dmg',
         capstoneText: 'Cleaver strikes slow targets for 0.8s so hooked prey cannot escape.',
@@ -75,7 +75,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Butcher Feast',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Cleaver strikes siphon blood back into Marrow-Hook.',
         perRankText: '+14% lifesteal',
         capstoneText: 'Cleaving an enemy hero grants +30 Bone Shield per strike.',
@@ -88,7 +88,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Executioner',
         name: 'Pneumatic Rend',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Accelerates hydraulic swing pistons.',
         perRankText: '+18% swing speed',
         capstoneText: 'Every 3rd Cleaver unleashes a wide extended shock-cleave (+90px reach).',
@@ -101,7 +101,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sniper Hook',
         name: 'Abyssal Long-Spool',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Extends alien alloy chain length to snag enemies across lanes.',
         perRankText: '+120 hook range',
         capstoneText: 'Hook launches 35% faster and reels captured victims in rapidly.',
@@ -114,7 +114,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Gore-Claw Ignition',
         cost: 165,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Barbed bone claws shred flesh and extend capture stun.',
         perRankText: '+24 dmg · +0.25s stun',
         capstoneText: 'Hooking an enemy hero automatically ignites a free 2.2s Blight Furnace.',
@@ -127,7 +127,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sniper Hook',
         name: 'Reset Winch',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Recycles chain recoil for relentless pick pressure.',
         perRankText: '-1.2s hook CD',
         capstoneText: 'Hooking an enemy champion immediately refunds 45% of Hook cooldown.',
@@ -140,7 +140,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Pestilent Miasma',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Thickens blight fumes for wider, deadlier rot ticks.',
         perRankText: '+8 rot/tick · +24 radius',
         capstoneText: 'Blight Furnace siphons 35% of all rot damage dealt back as health.',
@@ -153,7 +153,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Boiler Overpressure',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Reinforces chest boiler plating while Blight Furnace burns.',
         perRankText: '+14% armor · +1.0s dur',
         capstoneText: 'Gain +26% Move Speed while Blight Furnace is active to run prey down.',
@@ -166,7 +166,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Executioner',
         name: 'Plague Vent',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Vents boiler heat faster between fights.',
         perRankText: '-1.4s Furnace CD',
         capstoneText: 'When Blight Furnace ends, it detonates in a 65 dmg toxic stun nova.',
@@ -179,7 +179,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Stitched Flesh Heap',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Thickens grafted hide with raw primordial mass.',
         perRankText: '+55 Max HP',
         capstoneText: 'Every enemy champion kill permanently adds +25 Max HP for the match.',
@@ -192,7 +192,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sniper Hook',
         name: 'Hydraulic Vault Boots',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Upgrades heavy leg pistons for agile lane flanks.',
         perRankText: '+11% speed & jump',
         capstoneText: 'Unlocks a 2nd Heavy Leap (Double Jump) for high-rafter hook ambushes.',
@@ -205,9 +205,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Plague Juggernaut',
         name: 'Carrion Harvester',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Harvests battle essence from the slaughterhouse floor.',
-        perRankText: '+3.5 Relic/s · +3 HP/s',
+        perRankText: '+1.5 Relic/s · +4 HP/s',
         capstoneText: 'Every enemy creep kill instantly restores +18 HP to Marrow-Hook.',
         icon: 'solar',
       },
@@ -263,7 +263,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Sunforged Fan',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Infuses glaive lances with searing solar fire.',
         perRankText: '+4 glaive dmg',
         capstoneText: 'Every 3rd Radiant Glaive fires a 3-bolt golden spread volley.',
@@ -276,7 +276,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sanctuary Support',
         name: 'Merciful Light',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Attunes glaive fire rate to soothe allied wounds.',
         perRankText: '+14% fire rate · +10 ally heal',
         capstoneText: 'Radiant Glaive passes through allies, healing +24 HP and granting +20 Shield.',
@@ -289,7 +289,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Hard-Light Piercer',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Accelerates rail coils for long-range sky sniping.',
         perRankText: '+65 range · +80 bolt speed',
         capstoneText: 'Glaive bolts pierce straight through all enemies and slow for 0.6s.',
@@ -302,7 +302,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Twin Lance Array',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Overcharges spear warheads for heavy sky-burst.',
         perRankText: '+20 spear dmg',
         capstoneText: 'Hurls 2 Judgment Spears side-by-side in a double rail volley.',
@@ -315,7 +315,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sanctuary Support',
         name: 'Beacon of Grace',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Turns Judgment Spear into a ranged lifesaving benediction.',
         perRankText: '-1.0s Spear CD',
         capstoneText: 'Spear detonation heals all nearby allies for +65 HP & +45 Shield.',
@@ -328,7 +328,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Control',
         name: 'Pinning Consecration',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Widens consecrated shockwave around the spear impact.',
         perRankText: '+22 radius · +0.2s stun',
         capstoneText: 'Extends Spear stun by +0.45s and blasts victims skyward.',
@@ -341,7 +341,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sanctuary Support',
         name: 'Archangel Choir',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Transforms Aegis Descent into an unstoppable team-wide barrier.',
         perRankText: '+38 shield · +28 ally heal',
         capstoneText: 'Grants EVERY nearby allied champion +90 Aegis Shield on cast.',
@@ -354,7 +354,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Wrathful Supernova',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Overloads halo capacitors for pure offensive devastation.',
         perRankText: '+26 blast dmg · +26 radius',
         capstoneText: 'Supernova adds +75 Holy burst damage & stuns enemies for 0.65s.',
@@ -367,7 +367,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Halo Reset Matrix',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Cycles halo thrusters rapidly for constant dive combos.',
         perRankText: '-1.5s Aegis CD',
         capstoneText: 'Casting Aegis Descent instantly resets Judgment Spear cooldown.',
@@ -380,7 +380,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sky Mobility',
         name: 'Perpetual Seraph Wings',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Upgrades hard-light wing lift and flight agility.',
         perRankText: '+10% speed & jump',
         capstoneText: 'Infinite Halo Hover — airborne hover fuel never depletes.',
@@ -393,7 +393,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sanctuary Support',
         name: 'Martyr’s Aura',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Wards chassis with cathedral gold and gentle restoration.',
         perRankText: '+42 Max HP · +3 HP/s',
         capstoneText: 'Passively pulses +14 HP healing every 2.5s to nearby injured allies.',
@@ -406,9 +406,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy DPS',
         name: 'Zealot’s Momentum',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Channels sacred zeal into rapid battlefield scaling.',
-        perRankText: '+4 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Hero kills restore 25% HP and trim all ability cooldowns by 3.0s.',
         icon: 'solar',
       },
@@ -464,7 +464,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Swamp Balm',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Deepens ancestral spirit healing on allies.',
         perRankText: '+7 ally heal/bolt',
         capstoneText: 'Healing an ally also weaves a +26 Spirit Shield around them.',
@@ -477,7 +477,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Hex Shaman',
         name: 'Venom Fetish',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Sharpens ancestral curses against enemy champions.',
         perRankText: '+6 curse dmg',
         capstoneText: 'Hex-Mender bolts slow enemies for 0.85s and reach +100px farther.',
@@ -490,7 +490,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Symbiotic Chant',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Healing allied champions harvests bonus Relic Essence.',
         perRankText: '+4 Relic per ally heal',
         capstoneText: 'Every allied hero heal mirrors 50% of the healing back onto Korak.',
@@ -503,7 +503,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Grand Ancestor Shrine',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Expands totem sanctuary aura and healing power.',
         perRankText: '+7 heal/tick · +30 radius',
         capstoneText: 'Totem pulses also grant +22 Spirit Shield to every ally inside.',
@@ -516,7 +516,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Hex Shaman',
         name: 'Plague Juju Totem',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Turns the healing totem into a lethal cursed zone.',
         perRankText: '+16 enemy pulse dmg',
         capstoneText: 'Enemies inside the Totem suffer heavy curse burn & 1.2s slow per pulse.',
@@ -529,7 +529,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Control',
         name: 'Eternal Bone Roots',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Extends totem lifespan and hastens recast.',
         perRankText: '+2.5s dur · -1.5s CD',
         capstoneText: 'When Totem expires or breaks, it bursts for +70 Ally Heal & 55 Enemy Dmg.',
@@ -542,7 +542,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Hex Shaman',
         name: 'Vengeful Ancestors',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Empowers orbiting skulls and 3-skull barrage explosions.',
         perRankText: '+12 skull dmg',
         capstoneText: 'Orbiting skulls spit twice as fast & volley impacts stun for 0.45s.',
@@ -555,7 +555,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Guardian Spirit Ward',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Summoning a skull weaves bone spirit armor.',
         perRankText: '+35 shield on cast',
         capstoneText: 'Each orbiting skull grants Korak +10% damage reduction (up to 30%).',
@@ -568,7 +568,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Hex Shaman',
         name: 'Endless Séance',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Calls ancestral skulls back rapidly.',
         perRankText: '-0.9s skull CD',
         capstoneText: 'Launching a 3-skull volley immediately conjures 1 fresh skull.',
@@ -581,7 +581,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Bloodleaf Draught',
         cost: 125,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Fortifies shamanic vitality and organic regeneration.',
         perRankText: '+42 Max HP · +3.5 HP/s',
         capstoneText: 'While below 45% HP, Korak’s natural regeneration triples.',
@@ -594,7 +594,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Glide',
         name: 'Wind-Walker Fetish',
         cost: 125,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Floats swiftly between cathedral lanes.',
         perRankText: '+11% speed & jump',
         capstoneText: 'Infinite Spirit Glide — hover fuel never runs out mid-air.',
@@ -607,9 +607,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Spirit Healer',
         name: 'Tribal Conduit',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Channels pure primordial wealth.',
-        perRankText: '+4.5 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Every allied hero heal trims Totem & Skull cooldowns by 0.4s.',
         icon: 'solar',
       },
@@ -665,7 +665,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Twin Abyssal Shards',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Empowers every eldritch bolt.',
         perRankText: '+3.5 bolt dmg',
         capstoneText: 'Every attack fires 2 parallel Eldritch Bolts for deadly close-range DPS.',
@@ -678,7 +678,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Pact Cadence',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Accelerates eldritch barrage tempo.',
         perRankText: '+18% fire rate',
         capstoneText: 'Every 5th Eldritch Bolt detonates in a 56px occult splash burst.',
@@ -691,7 +691,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Soul Drain',
         name: 'Leeching Pact',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Eldritch bolts drain enemy essence into health.',
         perRankText: '+14% lifesteal',
         capstoneText: 'Overhealing from lifesteal converts into an Occult Shield (up to 85).',
@@ -704,7 +704,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Rift Executioner',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Turns Phase Dash into a lethal assassination finisher.',
         perRankText: '+24 dash dmg',
         capstoneText: 'Deals +60 bonus execute damage to enemies below 45% HP.',
@@ -717,7 +717,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Control',
         name: 'Hex Paralysis',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Extends dash stun and weaves a pact-ward.',
         perRankText: '+0.26s stun · +45 shield',
         capstoneText: 'Exiting Rift Dash detonates a 78px void shockwave at your arrival point.',
@@ -730,7 +730,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Flicker Reset',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Rift Dash recovers at blinding speed.',
         perRankText: '-1.1s dash CD',
         capstoneText: 'Scoring an enemy hero kill instantly resets Rift Phase Dash cooldown.',
@@ -743,7 +743,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Soul Drain',
         name: 'Devouring Tempest',
         cost: 160,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Burns harder across a wider soulfire maelstrom.',
         perRankText: '+10 tick dmg · +22 radius',
         capstoneText: 'Soul Maelstrom heals Vorg for 30% of all whirlwind damage dealt.',
@@ -756,7 +756,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Wraith Momentum',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Longer whirlwind with faster pursuit speed.',
         perRankText: '+0.5s dur · +18% speed',
         capstoneText: 'Maelstrom ticks slow every enemy caught inside by 42%.',
@@ -769,7 +769,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Soul Drain',
         name: 'Pact Carapace',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Hardens warlock aura during Maelstrom.',
         perRankText: '+18% armor',
         capstoneText: 'Activating Soul Maelstrom immediately grants +75 Occult Shield.',
@@ -782,7 +782,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Mobility',
         name: 'Triple Shadowstep',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Raises base agility for relentless aerial flanks.',
         perRankText: '+11% speed & jump',
         capstoneText: 'Unlocks a 3rd Mid-Air Jump for unmatched vertical outplays.',
@@ -795,7 +795,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Soul Drain',
         name: 'Blood Chalice',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Fortifies fragile occult vessel.',
         perRankText: '+42 Max HP',
         capstoneText: 'Champion kills immediately restore +90 HP to sustain dive streaks.',
@@ -808,9 +808,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Rift Executioner',
         name: 'Soul Siphon Tithe',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Passively siphons Relic Essence from the crypt.',
-        perRankText: '+4 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Enemy creep kills trim both Rift Dash & Maelstrom CDs by 0.35s.',
         icon: 'solar',
       },
@@ -866,7 +866,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy Artillery',
         name: 'Cathedral Barrage',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Increases consecrated mortar impact and splash.',
         perRankText: '+7 dmg · +16 splash',
         capstoneText: 'Lobs 2 bouncing Censer Mortars in a staggered holy arc.',
@@ -879,7 +879,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy Artillery',
         name: 'Siege Bombard',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Lobs censer mortars rapidly down lanes.',
         perRankText: '+18% fire rate',
         capstoneText: 'Mortars bounce twice & deal +30% bonus damage to Towers and Cores.',
@@ -892,7 +892,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Sanctuary Tank',
         name: 'Consecrated Balm',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Mortar fire coats the ground in slowing holy oil.',
         perRankText: '+0.8s slow',
         capstoneText: 'Mortar splashes heal nearby allied champions for +16 HP.',
@@ -905,7 +905,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Raid Boss',
         name: 'Martyr’s Vow',
         cost: 160,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Killing creeps or heroes with Clamp permanently raises Max HP.',
         perRankText: '+16 perm Max HP/kill',
         capstoneText: 'Clamp kills grant +25 Relic & double HP stacks (+32) on hero kills.',
@@ -918,7 +918,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Raid Boss',
         name: 'Blessed Banquet',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Boosts Clamp crushing damage and self-heal.',
         perRankText: '+22 dmg · +28 heal',
         capstoneText: 'Clamping an enemy hero stuns them for 0.65s & grants +55 Shield.',
@@ -931,7 +931,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Control',
         name: 'Inquisitorial Grip',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Cuts Clamp cooldown for constant frontline sustain.',
         perRankText: '-1.3s Clamp CD',
         capstoneText: 'Expands Sanctified Clamp reach by +45px in a wide frontal sweep.',
@@ -944,7 +944,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Holy Artillery',
         name: 'Judgment Day',
         cost: 165,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Massively amplifies Divine Reckoning explosion.',
         perRankText: '+40 dmg · +32 radius',
         capstoneText: 'Detonation also heals every nearby ally for +70 HP.',
@@ -957,7 +957,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Raid Boss',
         name: 'Unbreakable Faith',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Near-impenetrable armor while channeling Reckoning.',
         perRankText: '+16% channel armor',
         capstoneText: 'Grants +120 Sanctuary Shield immediately upon channeling.',
@@ -970,7 +970,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Dive Tank',
         name: 'Crusader Surge',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Surge forward rapidly while glowing with wrath.',
         perRankText: '+22% channel speed',
         capstoneText: 'Cuts Divine Reckoning fuse time by 0.65s for surprise dives.',
@@ -983,7 +983,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Raid Boss',
         name: 'Reliquary Colossus',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Massive base health fortification.',
         perRankText: '+65 Max HP',
         capstoneText: 'Permanently grants +12% flat Sacred Armor against all damage.',
@@ -996,7 +996,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Dive Tank',
         name: 'Pilgrim’s Leap',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Improved lane rotation and vertical reach.',
         perRankText: '+10% speed & jump',
         capstoneText: 'Unlocks a 2nd Heavy Leap (Double Jump) for high-rafter dives.',
@@ -1009,9 +1009,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Raid Boss',
         name: 'Vigilant Prayer',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Continuous holy regeneration and Relic tithe.',
-        perRankText: '+4.5 HP/s · +3 Relic/s',
+        perRankText: '+5.5 HP/s · +1.5 Relic/s',
         capstoneText: 'Out-of-combat health regeneration triples (+15 HP/s after 4s unhit).',
         icon: 'heal',
       },
@@ -1067,7 +1067,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Tungsten Piercers',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Hardened alien bolts punch deeper through armor.',
         perRankText: '+4 bolt dmg',
         capstoneText: 'Rail-Crossbow bolts pierce straight through creep waves and heroes.',
@@ -1080,7 +1080,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Overclocked Rail',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Boosts rail-crossbow cyclic rate.',
         perRankText: '+18% fire rate',
         capstoneText: 'Every 3rd bolt deals +22 shock damage and slows targets for 0.65s.',
@@ -1093,7 +1093,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Inquisition Rockets',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Extends crossbow rail reach for safe siege.',
         perRankText: '+55 range',
         capstoneText: 'Every 4th shot launches a homing Sacred Micro-Missile (34 AoE dmg).',
@@ -1106,7 +1106,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Tri-Brimstone Fan',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Packs heavier explosive charges into each canister.',
         perRankText: '+12 bomb dmg',
         capstoneText: 'Throws 3 Brimstone Cluster charges in a wide carpet-bombing fan.',
@@ -1119,7 +1119,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Sanctified Napalm',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Bigger blast radius and searing fire damage.',
         perRankText: '+12 dmg · +22 radius',
         capstoneText: 'Brimstone blasts stun enemies for 0.45s and scorch Towers for +25%.',
@@ -1132,7 +1132,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Recoil Vault Rig',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Shorter cluster cooldown for constant kiting.',
         perRankText: '-1.1s Cluster CD',
         capstoneText: 'Throwing Brimstone launches Vexia backward in a vault with +45 Shield.',
@@ -1145,7 +1145,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Siege Dreadnought Ram',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Holo-Seraph carries heavy shield plating and ram force.',
         perRankText: '+80 HP · +15 ram dmg',
         capstoneText: 'Holo-Seraph lasts +2.5s longer and hammers towers for double siege ticks.',
@@ -1158,7 +1158,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Martyr Detonation',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Amplifies Holo-Seraph knockback shove across lanes.',
         perRankText: '+95 knockback',
         capstoneText: 'Holo-Seraph explodes in a 95 dmg holy stun nova when expired or broken.',
@@ -1171,7 +1171,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Holo Relay Overcharge',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Re-deploys Holo-Seraph far more often.',
         perRankText: '-1.8s Ram CD',
         capstoneText: 'Casting Holo-Seraph grants Vexia +55 Shield & resets Brimstone CD by 2s.',
@@ -1184,7 +1184,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Graviton Vault Boots',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Crisper strafe speed and double-jump height.',
         perRankText: '+11% speed & jump',
         capstoneText: 'Unlocks a 3rd Tactical Air-Jump for high-rafter crossfire angles.',
@@ -1197,7 +1197,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Marksman',
         name: 'Witch-Hunter’s Ward',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Wards inquisitor cloak against stray fire.',
         perRankText: '+42 Max HP',
         capstoneText: 'Hero kills grant +80 Shield and +30 bonus Relic Essence.',
@@ -1210,9 +1210,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Demolition Siege',
         name: 'Sanctioned Demolition',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Accelerates Relic Essence trickle.',
-        perRankText: '+4.5 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Deals +22% bonus Primary damage to Reliquary Towers & Ancient Cores.',
         icon: 'solar',
       },
@@ -1268,7 +1268,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Twin Hard-Light Edges',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Raises plasma dagger damage.',
         perRankText: '+3.5 dagger dmg',
         capstoneText: 'Throws 2 converging plasma daggers on every attack.',
@@ -1281,7 +1281,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Neural Overdrive',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Pushes dagger throw speed to blur levels.',
         perRankText: '+18% attack speed',
         capstoneText: 'Plasma daggers pierce straight through enemy lines.',
@@ -1294,7 +1294,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Gravity Control',
         name: 'Nano-Siphon Blades',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Recovers bio-mass from plasma strikes.',
         perRankText: '+14% lifesteal',
         capstoneText: 'Each dagger hit trims Gravity Singularity cooldown by 0.15s.',
@@ -1307,7 +1307,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Gravity Control',
         name: 'Event Horizon Collapse',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Expands gravity well pull radius and crush damage.',
         perRankText: '+10 tick dmg · +28 radius',
         capstoneText: 'When Singularity expires, it implodes for 70 burst dmg & 0.6s stun.',
@@ -1320,7 +1320,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Gravity Control',
         name: 'Chrono-Stasis Well',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Singularity lasts longer and locks foes inside.',
         perRankText: '+0.8s dur · heavy slow',
         capstoneText: 'Vortex gravitational pull strength increases by +60%.',
@@ -1333,7 +1333,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Gravity Control',
         name: 'Zero-Point Core',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Recharges Singularity rapidly.',
         perRankText: '-1.3s Vortex CD',
         capstoneText: 'Launching Singularity immediately wraps Xylar in +55 Xeno Shield.',
@@ -1346,7 +1346,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Quantum Backstab',
         cost: 165,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Massively amplifies Phase Cloak ambush burst.',
         perRankText: '+34 ambush crit dmg',
         capstoneText: 'Phase Strike stuns the victim for 0.75s in a golden plasma blast.',
@@ -1359,7 +1359,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Phase Regeneration',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Longer stealth duration and protective shimmer shield.',
         perRankText: '+1.0s cloak · +45 shield',
         capstoneText: 'While cloaked, Xylar rapidly regenerates +22 HP per second.',
@@ -1372,7 +1372,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Ghost Protocol Reset',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Re-cloak quickly between assassinations.',
         perRankText: '-1.5s Cloak CD',
         capstoneText: 'Scoring an enemy hero kill instantly resets Phase-Shift Cloak.',
@@ -1385,7 +1385,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Mobility',
         name: 'Hyper-Tendons',
         cost: 135,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Peak sprint and vertical leap agility.',
         perRankText: '+12% speed & jump',
         capstoneText: 'Unlocks a 3rd Alien Mid-Air Leap for relentless escapes and chases.',
@@ -1398,7 +1398,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Gravity Control',
         name: 'Chitin Weave',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Reinforces alien exoskeleton.',
         perRankText: '+40 Max HP',
         capstoneText: 'Permanently grants +10% flat Xeno Armor against all damage.',
@@ -1411,9 +1411,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Stealth Assassin',
         name: 'Xeno Trophy Siphon',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Passive Relic energy siphoning.',
-        perRankText: '+4 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Every enemy champion kill awards +45 bonus Relic Essence.',
         icon: 'solar',
       },
@@ -1469,7 +1469,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Orbital Artillery',
         name: 'Wailing Nova Core',
         cost: 140,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Infuses Soul-Rail Orbs with heavier spectral decay.',
         perRankText: '+6 orb dmg',
         capstoneText: 'Soul-Rail Orbs explode at max range in a 75px spectral detonation.',
@@ -1482,7 +1482,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Necro-Mend Capacitor',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Fires Soul-Rail Orbs faster and farther down lanes.',
         perRankText: '+18% fire rate · +80 range',
         capstoneText: 'Orbs repair allied Bone-Borgs & creeps they pass through (+26 HP).',
@@ -1495,7 +1495,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Control',
         name: 'Death’s Chill',
         cost: 150,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Piercing orbs chill and slow enemies struck.',
         perRankText: '+0.85s slow',
         capstoneText: 'Soul-Rail Orbs siphon 18% lifesteal from every target pierced.',
@@ -1508,7 +1508,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Orbital Artillery',
         name: 'Warship Double-Salvo',
         cost: 165,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Boosts Orbital Smite beam width and obliteration damage.',
         perRankText: '+30 dmg · +24 radius',
         capstoneText: 'Calls a 2nd Orbital Aftershock beam 0.65s later for 65% damage.',
@@ -1521,7 +1521,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Crater Resurrection',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Orbital Smite stuns survivors longer and drains essence.',
         perRankText: '+0.35s stun · +15% drain',
         capstoneText: 'Orbital Smite raises a Bone-Borg directly at the scorched blast site.',
@@ -1534,7 +1534,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Orbital Artillery',
         name: 'Fast-Lock Uplink',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Calls orbital pillars far more often.',
         perRankText: '-1.4s Orbital CD',
         capstoneText: 'Cuts Orbital Smite lock-on delay from 0.85s down to 0.52s.',
@@ -1547,7 +1547,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Chrome Ossuary',
         cost: 155,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Summoned Bone-Borgs gain heavy armor and firepower.',
         perRankText: '+70 Borg HP · +6 dmg',
         capstoneText: 'Bone-Borgs spawn as Elite Tier V Siege Units with reinforced plating.',
@@ -1560,7 +1560,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Phylactery Fortress',
         cost: 145,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Casting Bone-Borg Guard wraps Caldris in a thick barrier.',
         perRankText: '+50 shield',
         capstoneText: 'Casting Bone-Borg Guard also restores +55 HP to Caldris.',
@@ -1573,9 +1573,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Legion of Chrome',
         cost: 160,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Summons undead waves more frequently.',
-        perRankText: '-1.6s Guard CD · +1 Borg at R1',
+        perRankText: '-2.2s Guard CD · +2 Bone-Borgs',
         capstoneText: 'Raises 4 Bone-Borgs per cast to overwhelm towers.',
         icon: 'special',
       },
@@ -1586,7 +1586,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Undead Commander',
         name: 'Undying Phylactery',
         cost: 130,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Hardens phylactery and passive regeneration.',
         perRankText: '+45 Max HP · +3 HP/s',
         capstoneText: 'Grants +12% flat Necro Armor whenever an allied Bone-Borg is alive.',
@@ -1599,7 +1599,7 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Orbital Artillery',
         name: 'Anti-Grav Dominion',
         cost: 125,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Glides swiftly across high cathedral rafters.',
         perRankText: '+11% speed & jump',
         capstoneText: 'Infinite Grave Float — hover indefinitely above teamfights.',
@@ -1612,9 +1612,9 @@ export const HERO_LIST: HeroDefinition[] = [
         archetype: 'Orbital Artillery',
         name: 'Necro-Telemetry',
         cost: 120,
-        maxRank: 2,
+        maxRank: 1,
         summary: 'Extracts steady Relic Essence from the battlefield.',
-        perRankText: '+4.5 Relic/sec',
+        perRankText: '+1.5 Relic/sec',
         capstoneText: 'Enemy creep kills trim Orbital Smite cooldown by 0.45s.',
         icon: 'solar',
       },
@@ -1630,15 +1630,82 @@ export const HERO_MAP: Record<HeroId, HeroDefinition> = HERO_LIST.reduce(
   {} as Record<HeroId, HeroDefinition>
 );
 
+export const TALENT_FORGE_TIERS = [220, 340, 480, 640] as const;
+export const OVERCLOCK_FORGE_COST = 800;
+const ALL_SKILL_ROWS: SkillRowKey[] = ['primary', 'skill1', 'skill2', 'utility'];
+
+export function getForgedRowStatus(
+  upgrades: Record<string, number>,
+  heroId: HeroId
+): {
+  forgedRows: Set<SkillRowKey>;
+  totalForged: number;
+  overclockUnlocked: boolean;
+} {
+  const def = HERO_MAP[heroId];
+  const forgedRows = new Set<SkillRowKey>();
+  let totalForged = 0;
+  for (const node of def.upgrades) {
+    if ((upgrades[node.id] ?? 0) > 0) {
+      forgedRows.add(node.row);
+      totalForged += 1;
+    }
+  }
+  return {
+    forgedRows,
+    totalForged,
+    overclockUnlocked: forgedRows.size >= ALL_SKILL_ROWS.length,
+  };
+}
+
+export function getTalentForgeCost(
+  upgrades: Record<string, number>,
+  heroId: HeroId
+): number {
+  const { totalForged } = getForgedRowStatus(upgrades, heroId);
+  if (totalForged < TALENT_FORGE_TIERS.length) {
+    return TALENT_FORGE_TIERS[totalForged];
+  }
+  return OVERCLOCK_FORGE_COST;
+}
+
+export function canForgeTalent(
+  upgrades: Record<string, number>,
+  heroId: HeroId,
+  node: UpgradeNode,
+  solar: number
+): {
+  allowed: boolean;
+  reason?: 'owned' | 'row_locked' | 'insufficient_relic';
+  cost: number;
+  isOverclock: boolean;
+} {
+  const owned = (upgrades[node.id] ?? 0) >= node.maxRank;
+  const { forgedRows, overclockUnlocked } = getForgedRowStatus(upgrades, heroId);
+  const cost = getTalentForgeCost(upgrades, heroId);
+  const isOverclock = overclockUnlocked;
+
+  if (owned) {
+    return { allowed: false, reason: 'owned', cost, isOverclock };
+  }
+  if (!overclockUnlocked && forgedRows.has(node.row)) {
+    return { allowed: false, reason: 'row_locked', cost, isOverclock };
+  }
+  if (solar < cost) {
+    return { allowed: false, reason: 'insufficient_relic', cost, isOverclock };
+  }
+  return { allowed: true, cost, isOverclock };
+}
+
 export function computeHeroStats(
   heroId: HeroId,
   ranks: Record<string, number>,
   bonusMaxHp = 0
 ): ComputedHeroStats {
   const def = HERO_MAP[heroId];
-  const r = (id: string) => ranks[id] ?? 0;
+  const r = (id: string) => (ranks[id] ?? 0) > 0 ? 1 : 0;
 
-  // Compute maxed capstones map cleanly from hero definition
+  // Every single-forge pick immediately activates its Capstone!
   const capstones: Record<string, boolean> = {};
   for (const node of def.upgrades) {
     capstones[node.id] = (ranks[node.id] ?? 0) >= node.maxRank;
@@ -1680,8 +1747,8 @@ export function computeHeroStats(
     skill2SummonHp: 170,
     skill2Knockback: 380,
     skill2HealAlly: 0,
-    passiveSolarPerSec: 3.2,
-    hpRegenPerSec: 1.6,
+    passiveSolarPerSec: 2.0,
+    hpRegenPerSec: 1.8,
     lifestealRatio: 0,
     extraJumps: 0,
     infiniteHover: false,
@@ -1691,215 +1758,215 @@ export function computeHeroStats(
   };
 
   if (heroId === 'marrow') {
-    stats.primaryDamage = 26 + r('mh_p1') * 7;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('mh_p3') * 0.18);
-    stats.primaryRange = 148;
-    stats.primaryProjectileSpeed = 620;
+    stats.primaryDamage = 26 + r('mh_p1') * 11;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('mh_p3') * 0.25);
+    stats.primaryRange = 222;
+    stats.primaryProjectileSpeed = 710;
     stats.primaryPierce = true;
-    stats.lifestealRatio = 0.08 + r('mh_p2') * 0.14;
+    stats.lifestealRatio = 0.08 + r('mh_p2') * 0.22;
 
-    stats.skill1Damage = 68 + r('mh_q2') * 24;
-    stats.skill1Range = 680 + r('mh_q1') * 120;
-    stats.skill1Stun = 0.72 + r('mh_q2') * 0.25;
-    stats.skill1Cooldown = Math.max(3.6, def.skill1.cooldown - r('mh_q3') * 1.2);
+    stats.skill1Damage = 68 + r('mh_q2') * 36;
+    stats.skill1Range = 680 + r('mh_q1') * 180;
+    stats.skill1Stun = 0.72 + r('mh_q2') * 0.35;
+    stats.skill1Cooldown = Math.max(3.6, def.skill1.cooldown - r('mh_q3') * 1.8);
 
-    stats.skill2Damage = 24 + r('mh_e1') * 8;
-    stats.skill2Radius = 118 + r('mh_e1') * 24;
-    stats.skill2Duration = 4.2 + r('mh_e2') * 1.0;
-    stats.skill2Armor = 0.26 + r('mh_e2') * 0.14;
+    stats.skill2Damage = 24 + r('mh_e1') * 12;
+    stats.skill2Radius = 118 + r('mh_e1') * 36;
+    stats.skill2Duration = 4.2 + r('mh_e2') * 1.5;
+    stats.skill2Armor = 0.26 + r('mh_e2') * 0.2;
     stats.skill2SpeedMult = capstones['mh_e2'] ? 1.26 : 1;
     stats.skill2ExplodeOnEnd = Boolean(capstones['mh_e3']);
-    stats.skill2Cooldown = Math.max(5.5, def.skill2.cooldown - r('mh_e3') * 1.4);
+    stats.skill2Cooldown = Math.max(5.5, def.skill2.cooldown - r('mh_e3') * 2.1);
 
-    stats.maxHp += r('mh_u1') * 55;
-    stats.moveSpeed *= 1 + r('mh_u2') * 0.11;
-    stats.jumpForce *= 1 + r('mh_u2') * 0.08;
+    stats.maxHp += r('mh_u1') * 85;
+    stats.moveSpeed *= 1 + r('mh_u2') * 0.16;
+    stats.jumpForce *= 1 + r('mh_u2') * 0.11;
     stats.extraJumps = capstones['mh_u2'] ? 1 : 0;
-    stats.passiveSolarPerSec += r('mh_u3') * 3.5;
-    stats.hpRegenPerSec += r('mh_u3') * 3.0;
+    stats.passiveSolarPerSec += r('mh_u3') * 1.5;
+    stats.hpRegenPerSec += r('mh_u3') * 4.0;
   } else if (heroId === 'seraph') {
-    stats.primaryDamage = 15 + r('sr_p1') * 4;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('sr_p2') * 0.14);
-    stats.primaryHeal = capstones['sr_p2'] ? 24 : r('sr_p2') * 10;
-    stats.primaryRange = 450 + r('sr_p3') * 65;
-    stats.primaryProjectileSpeed = 840 + r('sr_p3') * 80;
+    stats.primaryDamage = 15 + r('sr_p1') * 6;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('sr_p2') * 0.2);
+    stats.primaryHeal = capstones['sr_p2'] ? 24 : 0;
+    stats.primaryRange = 450 + r('sr_p3') * 95;
+    stats.primaryProjectileSpeed = 840 + r('sr_p3') * 110;
     stats.primaryPierce = Boolean(capstones['sr_p3']);
 
-    stats.skill1Damage = 62 + r('sr_q1') * 20;
-    stats.skill1Radius = 78 + r('sr_q3') * 22;
+    stats.skill1Damage = 62 + r('sr_q1') * 28;
+    stats.skill1Radius = 78 + r('sr_q3') * 34;
     stats.skill1ExtraCount = capstones['sr_q1'] ? 1 : 0;
-    stats.skill1Stun = 0.35 + r('sr_q3') * 0.2 + (capstones['sr_q3'] ? 0.45 : 0);
-    stats.skill1Cooldown = Math.max(3.5, def.skill1.cooldown - r('sr_q2') * 1.0);
+    stats.skill1Stun = 0.35 + (capstones['sr_q3'] ? 0.65 : 0);
+    stats.skill1Cooldown = Math.max(3.5, def.skill1.cooldown - r('sr_q2') * 1.6);
     stats.skill1Heal = capstones['sr_q2'] ? 65 : 0;
 
-    stats.skill2Damage = 48 + r('sr_e2') * 26 + (capstones['sr_e2'] ? 75 : 0);
-    stats.skill2Radius = 148 + r('sr_e2') * 26;
-    stats.skill2SummonHp = 88 + r('sr_e1') * 38;
-    stats.skill2HealAlly = 44 + r('sr_e1') * 28;
-    stats.skill2Knockback = 430 + r('sr_e2') * 50;
-    stats.skill2Cooldown = Math.max(5.2, def.skill2.cooldown - r('sr_e3') * 1.5);
+    stats.skill2Damage = 48 + r('sr_e2') * 38 + (capstones['sr_e2'] ? 75 : 0);
+    stats.skill2Radius = 148 + r('sr_e2') * 36;
+    stats.skill2SummonHp = 88 + r('sr_e1') * 55;
+    stats.skill2HealAlly = 44 + r('sr_e1') * 42;
+    stats.skill2Knockback = 430 + r('sr_e2') * 75;
+    stats.skill2Cooldown = Math.max(5.2, def.skill2.cooldown - r('sr_e3') * 2.2);
 
-    stats.moveSpeed *= 1 + r('sr_u1') * 0.1;
-    stats.jumpForce *= 1 + r('sr_u1') * 0.08;
+    stats.moveSpeed *= 1 + r('sr_u1') * 0.15;
+    stats.jumpForce *= 1 + r('sr_u1') * 0.11;
     stats.infiniteHover = Boolean(capstones['sr_u1']);
-    stats.maxHp += r('sr_u2') * 42;
-    stats.hpRegenPerSec += r('sr_u2') * 3.0;
-    stats.passiveSolarPerSec += r('sr_u3') * 4.0;
+    stats.maxHp += r('sr_u2') * 68;
+    stats.hpRegenPerSec += r('sr_u2') * 4.5;
+    stats.passiveSolarPerSec += r('sr_u3') * 1.5;
   } else if (heroId === 'korak') {
-    stats.primaryDamage = 13 + r('kr_p2') * 6;
-    stats.primaryHeal = 15 + r('kr_p1') * 7;
-    stats.primaryHealSolar = r('kr_p3') * 4;
+    stats.primaryDamage = 13 + r('kr_p2') * 9;
+    stats.primaryHeal = 15 + r('kr_p1') * 11;
+    stats.primaryHealSolar = r('kr_p3') * 5;
     stats.primaryCooldown = def.primary.cooldown;
     stats.primaryRange = 410 + (capstones['kr_p2'] ? 100 : 0);
     stats.primaryProjectileSpeed = 680;
 
-    stats.skill1Heal = 16 + r('kr_q1') * 7;
-    stats.skill1Radius = 158 + r('kr_q1') * 30;
-    stats.skill1Damage = r('kr_q2') * 16;
-    stats.skill1Slow = 0.7 + r('kr_q2') * 0.6;
-    stats.skill1Duration = 7.5 + r('kr_q3') * 2.5;
-    stats.skill1Cooldown = Math.max(6.0, def.skill1.cooldown - r('kr_q3') * 1.5);
+    stats.skill1Heal = 16 + r('kr_q1') * 11;
+    stats.skill1Radius = 158 + r('kr_q1') * 42;
+    stats.skill1Damage = r('kr_q2') * 24;
+    stats.skill1Slow = 0.7 + r('kr_q2') * 0.8;
+    stats.skill1Duration = 7.5 + r('kr_q3') * 3.5;
+    stats.skill1Cooldown = Math.max(6.0, def.skill1.cooldown - r('kr_q3') * 2.2);
 
-    stats.skill2Damage = 24 + r('kr_e1') * 12;
-    stats.skill2SummonHp = r('kr_e2') * 35;
-    stats.skill2Cooldown = Math.max(2.6, def.skill2.cooldown - r('kr_e3') * 0.9);
+    stats.skill2Damage = 24 + r('kr_e1') * 18;
+    stats.skill2SummonHp = r('kr_e2') * 55;
+    stats.skill2Cooldown = Math.max(2.6, def.skill2.cooldown - r('kr_e3') * 1.4);
 
-    stats.maxHp += r('kr_u1') * 42;
-    stats.hpRegenPerSec += r('kr_u1') * 3.5;
-    stats.moveSpeed *= 1 + r('kr_u2') * 0.11;
-    stats.jumpForce *= 1 + r('kr_u2') * 0.08;
+    stats.maxHp += r('kr_u1') * 68;
+    stats.hpRegenPerSec += r('kr_u1') * 5.0;
+    stats.moveSpeed *= 1 + r('kr_u2') * 0.16;
+    stats.jumpForce *= 1 + r('kr_u2') * 0.11;
     stats.infiniteHover = Boolean(capstones['kr_u2']);
-    stats.passiveSolarPerSec += r('kr_u3') * 4.5;
+    stats.passiveSolarPerSec += r('kr_u3') * 1.5;
   } else if (heroId === 'vorg') {
-    stats.primaryDamage = 11 + r('vg_p1') * 3.5;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('vg_p2') * 0.18);
+    stats.primaryDamage = 11 + r('vg_p1') * 5;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('vg_p2') * 0.26);
     stats.primaryRange = 370;
     stats.primaryProjectileSpeed = 790;
-    stats.lifestealRatio = r('vg_p3') * 0.14;
+    stats.lifestealRatio = r('vg_p3') * 0.22;
 
-    stats.skill1Damage = 48 + r('vg_q1') * 24;
-    stats.skill1Stun = 0.42 + r('vg_q2') * 0.26;
-    stats.skill1ShieldAfter = r('vg_q2') * 45;
+    stats.skill1Damage = 48 + r('vg_q1') * 36;
+    stats.skill1Stun = 0.42 + r('vg_q2') * 0.36;
+    stats.skill1ShieldAfter = r('vg_q2') * 68;
     stats.skill1DashSpeed = 870;
-    stats.skill1Cooldown = Math.max(2.8, def.skill1.cooldown - r('vg_q3') * 1.1);
+    stats.skill1Cooldown = Math.max(2.8, def.skill1.cooldown - r('vg_q3') * 1.6);
 
-    stats.skill2Damage = 26 + r('vg_e1') * 10;
-    stats.skill2Radius = 88 + r('vg_e1') * 22;
-    stats.skill2Duration = 2.3 + r('vg_e2') * 0.5;
-    stats.skill2SpeedMult = 1.16 + r('vg_e2') * 0.18;
-    stats.skill2Armor = 0.14 + r('vg_e3') * 0.18;
+    stats.skill2Damage = 26 + r('vg_e1') * 15;
+    stats.skill2Radius = 88 + r('vg_e1') * 32;
+    stats.skill2Duration = 2.3 + r('vg_e2') * 0.8;
+    stats.skill2SpeedMult = 1.16 + r('vg_e2') * 0.24;
+    stats.skill2Armor = 0.14 + r('vg_e3') * 0.26;
 
-    stats.moveSpeed *= 1 + r('vg_u1') * 0.11;
-    stats.jumpForce *= 1 + r('vg_u1') * 0.08;
+    stats.moveSpeed *= 1 + r('vg_u1') * 0.15;
+    stats.jumpForce *= 1 + r('vg_u1') * 0.11;
     stats.extraJumps = capstones['vg_u1'] ? 1 : 0;
-    stats.maxHp += r('vg_u2') * 42;
-    stats.passiveSolarPerSec += r('vg_u3') * 4.0;
+    stats.maxHp += r('vg_u2') * 65;
+    stats.passiveSolarPerSec += r('vg_u3') * 1.5;
   } else if (heroId === 'bastion') {
-    stats.primaryDamage = 24 + r('bs_p1') * 7;
-    stats.primarySplash = 58 + r('bs_p1') * 16;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('bs_p2') * 0.18);
+    stats.primaryDamage = 24 + r('bs_p1') * 10;
+    stats.primarySplash = 58 + r('bs_p1') * 24;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('bs_p2') * 0.25);
     stats.primaryRange = 460;
     stats.primaryProjectileSpeed = 590;
-    stats.skill1Slow = r('bs_p3') * 0.8;
+    stats.skill1Slow = r('bs_p3') * 1.1;
     stats.towerDamageMult = capstones['bs_p2'] ? 1.3 : 1;
 
-    stats.skill1Damage = 56 + r('bs_q2') * 22;
-    stats.skill1Heal = 44 + r('bs_q2') * 28;
-    stats.skill1Radius = 88 + (capstones['bs_q3'] ? 45 : 0);
-    stats.skill1PermanentHpGain = r('bs_q1') * 16;
-    stats.skill1Cooldown = Math.max(4.0, def.skill1.cooldown - r('bs_q3') * 1.3);
+    stats.skill1Damage = 56 + r('bs_q2') * 34;
+    stats.skill1Heal = 44 + r('bs_q2') * 42;
+    stats.skill1Radius = 132 + (capstones['bs_q3'] ? 55 : 0);
+    stats.skill1PermanentHpGain = r('bs_q1') * 22;
+    stats.skill1Cooldown = Math.max(4.0, def.skill1.cooldown - r('bs_q3') * 2.0);
 
-    stats.skill2Damage = 96 + r('bs_e1') * 40;
-    stats.skill2Radius = 168 + r('bs_e1') * 32;
+    stats.skill2Damage = 96 + r('bs_e1') * 60;
+    stats.skill2Radius = 168 + r('bs_e1') * 44;
     stats.skill2Duration = capstones['bs_e3'] ? 2.1 : 2.75;
-    stats.skill2Armor = 0.4 + r('bs_e2') * 0.16;
-    stats.skill2SpeedMult = 1.0 + r('bs_e3') * 0.22;
+    stats.skill2Armor = 0.4 + r('bs_e2') * 0.24;
+    stats.skill2SpeedMult = 1.0 + r('bs_e3') * 0.32;
 
-    stats.maxHp += r('bs_u1') * 65;
+    stats.maxHp += r('bs_u1') * 100;
     stats.flatArmor = capstones['bs_u1'] ? 0.12 : 0;
-    stats.moveSpeed *= 1 + r('bs_u2') * 0.1;
-    stats.jumpForce *= 1 + r('bs_u2') * 0.08;
+    stats.moveSpeed *= 1 + r('bs_u2') * 0.15;
+    stats.jumpForce *= 1 + r('bs_u2') * 0.11;
     stats.extraJumps = capstones['bs_u2'] ? 1 : 0;
-    stats.hpRegenPerSec += r('bs_u3') * 4.5;
-    stats.passiveSolarPerSec += r('bs_u3') * 3.0;
+    stats.hpRegenPerSec += r('bs_u3') * 5.5;
+    stats.passiveSolarPerSec += r('bs_u3') * 1.5;
   } else if (heroId === 'vexia') {
-    stats.primaryDamage = 14 + r('vx_p1') * 4;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('vx_p2') * 0.18);
-    stats.primaryRange = 460 + r('vx_p3') * 55;
+    stats.primaryDamage = 14 + r('vx_p1') * 6;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('vx_p2') * 0.25);
+    stats.primaryRange = 460 + r('vx_p3') * 85;
     stats.primaryProjectileSpeed = 860;
     stats.primaryPierce = Boolean(capstones['vx_p1']);
     stats.primaryBonusRocket = Boolean(capstones['vx_p3']);
     stats.towerDamageMult = capstones['vx_u3'] ? 1.22 : 1;
 
-    stats.skill1Damage = 46 + r('vx_q1') * 12 + r('vx_q2') * 12;
-    stats.skill1Radius = 84 + r('vx_q2') * 22;
+    stats.skill1Damage = 46 + r('vx_q1') * 18 + r('vx_q2') * 18;
+    stats.skill1Radius = 84 + r('vx_q2') * 32;
     stats.skill1ExtraCount = capstones['vx_q1'] ? 2 : 0;
     stats.skill1Stun = capstones['vx_q2'] ? 0.45 : 0;
-    stats.skill1Cooldown = Math.max(3.6, def.skill1.cooldown - r('vx_q3') * 1.1);
+    stats.skill1Cooldown = Math.max(3.6, def.skill1.cooldown - r('vx_q3') * 1.7);
 
-    stats.skill2SummonHp = 190 + r('vx_e1') * 80;
-    stats.skill2Damage = 36 + r('vx_e1') * 15;
-    stats.skill2Knockback = 470 + r('vx_e2') * 95;
+    stats.skill2SummonHp = 190 + r('vx_e1') * 120;
+    stats.skill2Damage = 36 + r('vx_e1') * 22;
+    stats.skill2Knockback = 470 + r('vx_e2') * 140;
     stats.skill2ExplodeOnEnd = Boolean(capstones['vx_e2']);
-    stats.skill2Cooldown = Math.max(6.0, def.skill2.cooldown - r('vx_e3') * 1.8);
+    stats.skill2Cooldown = Math.max(6.0, def.skill2.cooldown - r('vx_e3') * 2.6);
 
-    stats.moveSpeed *= 1 + r('vx_u1') * 0.11;
-    stats.jumpForce *= 1 + r('vx_u1') * 0.08;
+    stats.moveSpeed *= 1 + r('vx_u1') * 0.15;
+    stats.jumpForce *= 1 + r('vx_u1') * 0.11;
     stats.extraJumps = capstones['vx_u1'] ? 1 : 0;
-    stats.maxHp += r('vx_u2') * 42;
-    stats.passiveSolarPerSec += r('vx_u3') * 4.5;
+    stats.maxHp += r('vx_u2') * 65;
+    stats.passiveSolarPerSec += r('vx_u3') * 1.5;
   } else if (heroId === 'xylar') {
-    stats.primaryDamage = 10 + r('xy_p1') * 3.5;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('xy_p2') * 0.18);
-    stats.primaryRange = 330;
-    stats.primaryProjectileSpeed = 880;
+    stats.primaryDamage = 10 + r('xy_p1') * 5;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('xy_p2') * 0.26);
+    stats.primaryRange = 380;
+    stats.primaryProjectileSpeed = 920;
     stats.primaryPierce = Boolean(capstones['xy_p2']);
-    stats.lifestealRatio = r('xy_p3') * 0.14;
+    stats.lifestealRatio = r('xy_p3') * 0.22;
 
-    stats.skill1Damage = 22 + r('xy_q1') * 10;
-    stats.skill1Radius = 145 + r('xy_q1') * 28;
-    stats.skill1Duration = 2.6 + r('xy_q2') * 0.8;
-    stats.skill1Slow = 0.8 + r('xy_q2') * 0.6;
-    stats.skill1Cooldown = Math.max(4.5, def.skill1.cooldown - r('xy_q3') * 1.3);
+    stats.skill1Damage = 22 + r('xy_q1') * 15;
+    stats.skill1Radius = 145 + r('xy_q1') * 40;
+    stats.skill1Duration = 2.6 + r('xy_q2') * 1.2;
+    stats.skill1Slow = 0.8 + r('xy_q2') * 0.85;
+    stats.skill1Cooldown = Math.max(4.5, def.skill1.cooldown - r('xy_q3') * 2.0);
 
-    stats.skill2Damage = 55 + r('xy_e1') * 34;
-    stats.skill2Duration = 3.6 + r('xy_e2') * 1.0;
-    stats.skill2SummonHp = r('xy_e2') * 45;
+    stats.skill2Damage = 55 + r('xy_e1') * 50;
+    stats.skill2Duration = 3.6 + r('xy_e2') * 1.4;
+    stats.skill2SummonHp = r('xy_e2') * 68;
     stats.skill2SpeedMult = 1.32;
-    stats.skill2Cooldown = Math.max(5.0, def.skill2.cooldown - r('xy_e3') * 1.5);
+    stats.skill2Cooldown = Math.max(5.0, def.skill2.cooldown - r('xy_e3') * 2.2);
 
-    stats.moveSpeed *= 1 + r('xy_u1') * 0.12;
-    stats.jumpForce *= 1 + r('xy_u1') * 0.08;
+    stats.moveSpeed *= 1 + r('xy_u1') * 0.16;
+    stats.jumpForce *= 1 + r('xy_u1') * 0.11;
     stats.extraJumps = capstones['xy_u1'] ? 1 : 0;
-    stats.maxHp += r('xy_u2') * 40;
+    stats.maxHp += r('xy_u2') * 65;
     stats.flatArmor = capstones['xy_u2'] ? 0.1 : 0;
-    stats.passiveSolarPerSec += r('xy_u3') * 4.0;
+    stats.passiveSolarPerSec += r('xy_u3') * 1.5;
   } else if (heroId === 'caldris') {
-    stats.primaryDamage = 20 + r('cd_p1') * 6;
-    stats.primaryCooldown = def.primary.cooldown / (1 + r('cd_p2') * 0.18);
-    stats.primaryRange = 490 + r('cd_p2') * 80;
+    stats.primaryDamage = 20 + r('cd_p1') * 9;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('cd_p2') * 0.25);
+    stats.primaryRange = 490 + r('cd_p2') * 115;
     stats.primaryProjectileSpeed = 540;
     stats.primaryPierce = true;
-    stats.skill1Slow = r('cd_p3') * 0.85;
-    stats.lifestealRatio = (capstones['cd_p3'] ? 0.18 : 0) + r('cd_q2') * 0.15;
+    stats.skill1Slow = r('cd_p3') * 1.15;
+    stats.lifestealRatio = (capstones['cd_p3'] ? 0.18 : 0) + r('cd_q2') * 0.2;
 
-    stats.skill1Damage = 82 + r('cd_q1') * 30;
-    stats.skill1Radius = 115 + r('cd_q1') * 24;
-    stats.skill1Stun = 0.65 + r('cd_q2') * 0.35;
-    stats.skill1Cooldown = Math.max(4.5, def.skill1.cooldown - r('cd_q3') * 1.4);
+    stats.skill1Damage = 82 + r('cd_q1') * 45;
+    stats.skill1Radius = 115 + r('cd_q1') * 34;
+    stats.skill1Stun = 0.65 + r('cd_q2') * 0.45;
+    stats.skill1Cooldown = Math.max(4.5, def.skill1.cooldown - r('cd_q3') * 2.1);
 
-    stats.skill2SummonHp = 155 + r('cd_e1') * 70;
-    stats.skill2Damage = 13 + r('cd_e1') * 6;
-    stats.skill2HealAlly = 85 + r('cd_e2') * 50;
-    stats.skill1ExtraCount = r('cd_e3'); // 0 -> 2 borgs, 1 -> 3 borgs, 2 -> 4 borgs!
-    stats.skill2Cooldown = Math.max(8.5, def.skill2.cooldown - r('cd_e3') * 1.6);
+    stats.skill2SummonHp = 155 + r('cd_e1') * 105;
+    stats.skill2Damage = 13 + r('cd_e1') * 9;
+    stats.skill2HealAlly = 85 + r('cd_e2') * 75;
+    stats.skill1ExtraCount = r('cd_e3') > 0 ? 2 : 0; // 2 -> 4 Bone-Borgs immediately!
+    stats.skill2Cooldown = Math.max(8.5, def.skill2.cooldown - r('cd_e3') * 2.2);
 
-    stats.maxHp += r('cd_u1') * 45;
-    stats.hpRegenPerSec += r('cd_u1') * 3.0;
-    stats.moveSpeed *= 1 + r('cd_u2') * 0.11;
-    stats.jumpForce *= 1 + r('cd_u2') * 0.08;
+    stats.maxHp += r('cd_u1') * 70;
+    stats.hpRegenPerSec += r('cd_u1') * 4.5;
+    stats.moveSpeed *= 1 + r('cd_u2') * 0.16;
+    stats.jumpForce *= 1 + r('cd_u2') * 0.11;
     stats.infiniteHover = Boolean(capstones['cd_u2']);
-    stats.passiveSolarPerSec += r('cd_u3') * 4.5;
+    stats.passiveSolarPerSec += r('cd_u3') * 1.5;
   }
 
   return stats;

@@ -3,6 +3,7 @@ import type {
   Difficulty,
   GamePhase,
   HeroId,
+  KillFeedEntry,
   ProjectileEntity,
   Team,
 } from './types.ts';
@@ -252,6 +253,7 @@ export interface WorldSnapshot {
   redKills: number;
   humanCount: number;
   banner: AnnouncerBanner | null;
+  killFeed: KillFeedEntry[];
   heroes: NetHeroSnapshot[];
   droids: NetDroidSnapshot[];
   turrets: NetTurretSnapshot[];
@@ -287,6 +289,13 @@ export type ClientToServerMessage =
       heroId: HeroId;
     }
   | {
+      type: 'switch_hero';
+      heroId: HeroId;
+    }
+  | {
+      type: 'requeue_lobby';
+    }
+  | {
       type: 'ping';
       clientTime: number;
     };
@@ -303,6 +312,11 @@ export type ServerToClientMessage =
   | {
       type: 'state';
       snapshot: WorldSnapshot;
+    }
+  | {
+      type: 'return_to_lobby';
+      roomId: string;
+      reason: string;
     }
   | {
       type: 'pong';

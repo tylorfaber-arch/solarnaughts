@@ -5,11 +5,33 @@ import { SkillTreeModal } from './components/SkillTreeModal';
 import { TitleScreen } from './components/TitleScreen';
 import { gameAudio } from './game/audio';
 import { GameEngine, type EngineLaunchConfig } from './game/engine';
-import type { Difficulty, HeroId, HudSnapshot } from './game/types';
+import type { MatchMode } from './game/netTypes';
+import { ensureArenaArtLoaded } from './game/sprites';
+import type { Difficulty, HeroId, HudSnapshot, Team } from './game/types';
+
+function readInitialLobbyFromUrl(): { roomCode: string; teamPref: 'auto' | Team } {
+  const params = new URLSearchParams(window.location.search);
+  const rawRoom = params.get('room');
+  const cleanRoom = rawRoom ? rawRoom.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12) : '';
+  const rawTeam = params.get('team');
+  const teamPref: 'auto' | Team = rawTeam === 'blue' || rawTeam === 'red' ? rawTeam : 'auto';
+  return {
+    roomCode: cleanRoom.length >= 2 ? cleanRoom : 'SANCTUM-1',
+    teamPref,
+  };
+}
 
 export default function App() {
+  const initialLobby = useRef(readInitialLobbyFromUrl()).current;
+
   const [selectedHero, setSelectedHero] = useState<HeroId>('marrow');
   const [difficulty, setDifficulty] = useState<Difficulty>('standard');
+  const [mode, setMode] = useState<MatchMode>('online');
+  const [roomCode, setRoomCode] = useState(initialLobby.roomCode);
+  const [playerName, setPlayerName] = useState('Champion');
+  const [teamPref, setTeamPref] = useState<'auto' | Team>(initialLobby.teamPref);
+  const [lobbyNotice, setLobbyNotice] = useState<string | null>(null);
+
   const [launchConfig, setLaunchConfig] = useState<EngineLaunchConfig | null>(null);
 
   const [hud, setHud] = useState<HudSnapshot | null>(null);
@@ -17,9 +39,36 @@ export default function App() {
   const [pauseMenuOpen, setPauseMenuOpen] = useState(false);
   const [tabHeld, setTabHeld] = useState(false);
   const [muted, setMuted] = useState(() => gameAudio.isMuted());
+  const [connectSlow, setConnectSlow] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
+
+  useEffect(() => {
+    if (!launchConfig || launchConfig.mode !== 'online' || hud) {
+      setConnectSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setConnectSlow(true), 4500);
+    return () => window.clearTimeout(timer);
+  }, [launchConfig, hud]);
+
+  // Preload & process inked hero/tower/cathedral art while user is on Champion Select
+  useEffect(() => {
+    ensureArenaArtLoaded();
+  }, []);
+
+  const handleReturnToLobby = useCallback((returnedRoomId: string, reason: string) => {
+    setShopOpen(false);
+    setPauseMenuOpen(false);
+    setTabHeld(false);
+    setHud(null);
+    if (returnedRoomId) {
+      setRoomCode(returnedRoomId);
+    }
+    setLobbyNotice(reason || `Room ${returnedRoomId} ready for re-queue. Pick your Champion!`);
+    setLaunchConfig(null);
+  }, []);
 
   // Mount & manage the 60fps GameEngine inside isolated canvas ref
   useEffect(() => {
@@ -33,9 +82,14 @@ export default function App() {
     resize();
     window.addEventListener('resize', resize);
 
-    const engine = new GameEngine(canvas, launchConfig, (snapshot) => {
-      setHud(snapshot);
-    });
+    const engine = new GameEngine(
+      canvas,
+      launchConfig,
+      (snapshot) => {
+        setHud(snapshot);
+      },
+      handleReturnToLobby
+    );
     engineRef.current = engine;
     engine.start();
 
@@ -44,7 +98,14 @@ export default function App() {
       engine.destroy();
       engineRef.current = null;
     };
-  }, [launchConfig]);
+  }, [launchConfig, handleReturnToLobby]);
+
+  // Keep selectedHero synced if server confirms a mid-game hero switch
+  useEffect(() => {
+    if (hud?.player.heroId && hud.player.heroId !== selectedHero) {
+      setSelectedHero(hud.player.heroId);
+    }
+  }, [hud?.player.heroId, selectedHero]);
 
   // Global in-match hotkeys (B = Skill Tree, Tab = Scoreboard, Esc = Pause / Close Modal)
   useEffect(() => {
@@ -96,10 +157,12 @@ export default function App() {
   }, [launchConfig]);
 
   const handleStartGame = useCallback((cfg: EngineLaunchConfig) => {
+    setLobbyNotice(null);
     setHud(null);
     setShopOpen(false);
     setPauseMenuOpen(false);
     setTabHeld(false);
+    if (cfg.roomId) setRoomCode(cfg.roomId.toUpperCase());
     setLaunchConfig(cfg);
   }, []);
 
@@ -121,6 +184,12 @@ export default function App() {
     engineRef.current?.setPaused(false);
   }, []);
 
+  const handleSwitchHero = useCallback((heroId: HeroId) => {
+    engineRef.current?.switchPlayerHero(heroId);
+    setPauseMenuOpen(false);
+    engineRef.current?.setPaused(false);
+  }, []);
+
   const handleExitToTitle = useCallback(() => {
     setShopOpen(false);
     setPauseMenuOpen(false);
@@ -128,6 +197,17 @@ export default function App() {
     setHud(null);
     setLaunchConfig(null);
   }, []);
+
+  const handleRequeueToLobby = useCallback(() => {
+    setShopOpen(false);
+    setPauseMenuOpen(false);
+    setTabHeld(false);
+    if (engineRef.current) {
+      engineRef.current.requeueToLobby();
+    } else {
+      handleExitToTitle();
+    }
+  }, [handleExitToTitle]);
 
   const handlePlayAgain = useCallback(() => {
     setShopOpen(false);
@@ -150,6 +230,15 @@ export default function App() {
         onSelectHero={setSelectedHero}
         difficulty={difficulty}
         onSelectDifficulty={setDifficulty}
+        mode={mode}
+        onSelectMode={setMode}
+        roomCode={roomCode}
+        onChangeRoomCode={setRoomCode}
+        playerName={playerName}
+        onChangePlayerName={setPlayerName}
+        teamPref={teamPref}
+        onChangeTeamPref={setTeamPref}
+        lobbyNotice={lobbyNotice}
         onStartGame={handleStartGame}
       />
     );
@@ -168,15 +257,42 @@ export default function App() {
       {/* Connecting State for Online Mode */}
       {!hud && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-[#0A101D]/90">
-          <div className="px-6 py-4 rounded-xl bg-[#0D1526] border border-slate-700 text-center">
+          <div className="px-6 py-5 rounded-xl bg-[#0D1526] border border-slate-700 text-center max-w-sm">
             <div className="font-display text-lg font-bold text-amber-300">
               {launchConfig.mode === 'online'
-                ? `Connecting to Room ${launchConfig.roomId ?? 'ALPHA-1'}...`
+                ? `Connecting to Room ${launchConfig.roomId ?? 'SANCTUM-1'}...`
                 : 'Preparing Drop Pods...'}
             </div>
             <div className="text-xs text-slate-400 mt-1">
-              Syncing 60Hz arena state
+              {connectSlow
+                ? 'Room WebSocket is taking longer than expected.'
+                : 'Syncing 60Hz arena state'}
             </div>
+            {connectSlow && launchConfig.mode === 'online' && (
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleStartGame({
+                      mode: 'solo',
+                      heroId: launchConfig.heroId,
+                      difficulty: launchConfig.difficulty,
+                      playerName: launchConfig.playerName,
+                    })
+                  }
+                  className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-display text-xs font-bold uppercase tracking-wider cursor-pointer transition"
+                >
+                  Play Solo Skirmish
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExitToTitle}
+                  className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 font-display text-xs font-bold uppercase tracking-wider cursor-pointer transition"
+                >
+                  Back to Lobby
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -217,15 +333,17 @@ export default function App() {
           hud={hud}
           muted={muted}
           onResume={handleResume}
+          onSwitchHero={handleSwitchHero}
           onToggleMute={handleToggleMute}
           onExitToTitle={handleExitToTitle}
         />
       )}
 
-      {/* Victory / Defeat Modal */}
+      {/* Victory / Defeat Modal (Never Auto-Restarts) */}
       {hud && isFinished && (
         <EndMatchModal
           hud={hud}
+          onRequeueToLobby={handleRequeueToLobby}
           onPlayAgain={handlePlayAgain}
           onChangeHero={handleExitToTitle}
         />
@@ -233,3 +351,4 @@ export default function App() {
     </div>
   );
 }
+

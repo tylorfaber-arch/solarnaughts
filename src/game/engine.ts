@@ -1,5 +1,5 @@
 import { gameAudio } from './audio';
-import { computeHeroStats, HERO_MAP } from './heroes';
+import { canForgeTalent, computeHeroStats, HERO_MAP } from './heroes';
 import { BASE_ZONES, GRAVITY, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
 import type {
   ClientToServerMessage,
@@ -46,6 +46,7 @@ export class GameEngine {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private onHudUpdate: (snapshot: HudSnapshot) => void;
+  private onReturnToLobby?: (roomId: string, reason: string) => void;
   private rafId: number | null = null;
   private lastTs = 0;
   private hudEmitTimer = 0;
@@ -83,6 +84,7 @@ export class GameEngine {
   private blueKills = 0;
   private redKills = 0;
   private banner: WorldSnapshot['banner'] = null;
+  private killFeed: WorldSnapshot['killFeed'] = [];
   private mirrorHeroes = new Map<string, HeroEntity>();
   private mirrorDroids = new Map<string, DroidEntity>();
   private mirrorTurrets = new Map<string, TurretEntity>();
@@ -117,23 +119,28 @@ export class GameEngine {
   private queuedSkill2 = false;
   private queuedRecall = false;
 
-  // Local client-side prediction timers for online mode
+  // Local client-side prediction & reconciliation state for online mode
   private predCoyote = 0;
   private predJumpBuffer = 0;
   private predJumpsLeft = 2;
   private predDropThrough = 0;
   private predHoverFuel = 1;
+  private pendingInputs: Array<{ seq: number; dt: number; pkt: PlayerInputPacket }> = [];
+  private remoteHeroTargets = new Map<string, { x: number; y: number; vx: number; vy: number }>();
+  private remoteDroidTargets = new Map<string, { x: number; y: number; vx: number; vy: number }>();
 
   constructor(
     canvas: HTMLCanvasElement,
     config: EngineLaunchConfig,
-    onHudUpdate: (snapshot: HudSnapshot) => void
+    onHudUpdate: (snapshot: HudSnapshot) => void,
+    onReturnToLobby?: (roomId: string, reason: string) => void
   ) {
     this.canvas = canvas;
     const context = canvas.getContext('2d');
     if (!context) throw new Error('Could not initialize 2D rendering context.');
     this.ctx = context;
     this.onHudUpdate = onHudUpdate;
+    this.onReturnToLobby = onReturnToLobby;
 
     this.mode = config.mode;
     this.heroId = config.heroId;
@@ -164,6 +171,21 @@ export class GameEngine {
   }
 
   private connectOnline(): void {
+    if (this.destroyed) return;
+    if (this.pingIntervalId !== null) {
+      clearInterval(this.pingIntervalId);
+      this.pingIntervalId = null;
+    }
+    if (this.ws) {
+      const oldWs = this.ws;
+      this.ws = null;
+      try {
+        oldWs.close();
+      } catch {
+        // Ignore close errors on stale socket
+      }
+    }
+
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
@@ -171,7 +193,16 @@ export class GameEngine {
     this.wsConnected = false;
 
     ws.addEventListener('open', () => {
+      if (this.ws !== ws || this.destroyed) {
+        try {
+          ws.close();
+        } catch {
+          // Ignore
+        }
+        return;
+      }
       this.wsConnected = true;
+      this.pendingInputs = [];
       const joinMsg: ClientToServerMessage = {
         type: 'join',
         roomId: this.roomId || 'SANCTUM-1',
@@ -186,6 +217,7 @@ export class GameEngine {
     });
 
     ws.addEventListener('message', (ev) => {
+      if (this.ws !== ws || this.destroyed) return;
       let msg: ServerToClientMessage;
       try {
         msg = JSON.parse(String(ev.data)) as ServerToClientMessage;
@@ -200,6 +232,9 @@ export class GameEngine {
         this.playerEntityId = msg.playerEntityId;
         this.heroId = msg.assignedHeroId;
         this.playerTeam = msg.team;
+        this.pendingInputs = [];
+        this.remoteHeroTargets.clear();
+        this.remoteDroidTargets.clear();
         this.applyServerSnapshot(msg.snapshot, true);
         const me = this.mirrorHeroes.get(this.playerEntityId);
         if (me) {
@@ -209,6 +244,9 @@ export class GameEngine {
         this.emitHud();
       } else if (msg.type === 'state') {
         this.applyServerSnapshot(msg.snapshot, false);
+      } else if (msg.type === 'return_to_lobby') {
+        this.destroyed = true;
+        this.onReturnToLobby?.(msg.roomId, msg.reason);
       } else if (msg.type === 'error') {
         this.banner = {
           id: Date.now(),
@@ -221,7 +259,13 @@ export class GameEngine {
       }
     });
 
+    ws.addEventListener('error', () => {
+      if (this.ws !== ws || this.destroyed) return;
+      // Close event handles clean reconnect
+    });
+
     ws.addEventListener('close', () => {
+      if (this.ws !== ws) return;
       this.wsConnected = false;
       if (this.pingIntervalId !== null) {
         clearInterval(this.pingIntervalId);
@@ -315,6 +359,35 @@ export class GameEngine {
     } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const msg: ClientToServerMessage = { type: 'restart', heroId: playerHeroId };
       this.ws.send(JSON.stringify(msg));
+    }
+  }
+
+  public switchPlayerHero(nextHeroId: HeroId): boolean {
+    if (this.mode === 'solo' && this.localSim) {
+      const switched = this.localSim.switchHumanHero(this.playerEntityId, nextHeroId);
+      if (switched) {
+        this.heroId = switched.assignedHeroId;
+        this.phase = 'PLAYING';
+        this.processFxEvents(this.localSim.drainFx());
+        this.emitHud();
+        return true;
+      }
+      return false;
+    }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const msg: ClientToServerMessage = { type: 'switch_hero', heroId: nextHeroId };
+      this.ws.send(JSON.stringify(msg));
+      return true;
+    }
+    return false;
+  }
+
+  public requeueToLobby(): void {
+    if (this.mode === 'online' && this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const msg: ClientToServerMessage = { type: 'requeue_lobby' };
+      this.ws.send(JSON.stringify(msg));
+    } else {
+      this.onReturnToLobby?.(this.roomId ?? '', '');
     }
   }
 
@@ -459,7 +532,7 @@ export class GameEngine {
     this.clearEdgeTriggers();
   }
 
-  // === ONLINE TWITCHY UPDATE ===
+  // === ONLINE 60FPS PREDICTED + RECONCILED UPDATE ===
   private updateOnline(dt: number): void {
     if (this.hitstopTimer > 0) {
       this.hitstopTimer -= dt;
@@ -474,25 +547,45 @@ export class GameEngine {
       const pkt = this.sampleInputPacket(me.x, me.y);
       const inputKey = `${pkt.moveDir}|${pkt.holdingJump ? 1 : 0}|${pkt.wantPrimary ? 1 : 0}|${Math.round(pkt.aimAngle * 16)}`;
       const hasEdge = pkt.wantJump || pkt.wantDrop || pkt.wantSkill1 || pkt.wantSkill2 || pkt.wantRecall;
+      const isActivelyMoving = pkt.moveDir !== 0 || !me.grounded || me.inDropPod || Math.abs(me.vx) > 4;
 
       this.inputSendTimer -= dt;
-      if (hasEdge || inputKey !== this.lastSentInputKey || this.inputSendTimer <= 0) {
-        this.inputSendTimer = 0.032;
+      const shouldSend = hasEdge || isActivelyMoving || inputKey !== this.lastSentInputKey || this.inputSendTimer <= 0;
+      if (shouldSend) {
+        this.inputSendTimer = isActivelyMoving ? 0.016 : 0.08;
         this.lastSentInputKey = inputKey;
         const msg: ClientToServerMessage = { type: 'input', input: pkt };
         this.ws.send(JSON.stringify(msg));
       }
 
+      if (me.alive && !me.inDropPod && !me.hookedById && me.stunTimer <= 0 && me.dashTimer <= 0) {
+        this.pendingInputs.push({ seq: pkt.seq, dt, pkt });
+        if (this.pendingInputs.length > 75) {
+          this.pendingInputs.splice(0, this.pendingInputs.length - 75);
+        }
+      } else {
+        this.pendingInputs.length = 0;
+      }
+
       this.predictLocalHero(me, pkt, dt);
     }
 
+    const remoteBlend = Math.min(1, dt * 18);
     for (const h of this.mirrorHeroes.values()) {
       h.squashX += (1 - h.squashX) * Math.min(1, dt * 14);
       h.squashY += (1 - h.squashY) * Math.min(1, dt * 14);
       if (h.id === this.playerEntityId) continue;
       if (h.alive && !h.inDropPod && !h.hookedById) {
-        h.x += h.vx * dt;
-        h.y += h.vy * dt;
+        const tgt = this.remoteHeroTargets.get(h.id);
+        if (tgt) {
+          tgt.x += tgt.vx * dt;
+          tgt.y += tgt.vy * dt;
+          h.x += (tgt.x - h.x) * remoteBlend;
+          h.y += (tgt.y - h.y) * remoteBlend;
+        } else {
+          h.x += h.vx * dt;
+          h.y += h.vy * dt;
+        }
         if (Math.abs(h.vx) > 25 && h.grounded) h.walkCycle += dt * Math.abs(h.vx) * 0.015;
       } else if (h.inDropPod) {
         h.dropPodY = Math.min(960 - h.h / 2, h.dropPodY + 420 * dt);
@@ -501,8 +594,16 @@ export class GameEngine {
     }
 
     for (const d of this.mirrorDroids.values()) {
-      d.x += d.vx * dt;
-      d.y += d.vy * dt;
+      const tgt = this.remoteDroidTargets.get(d.id);
+      if (tgt) {
+        tgt.x += tgt.vx * dt;
+        tgt.y += tgt.vy * dt;
+        d.x += (tgt.x - d.x) * remoteBlend;
+        d.y += (tgt.y - d.y) * remoteBlend;
+      } else {
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+      }
       if (Math.abs(d.vx) > 10) d.walkCycle += dt * 4;
     }
 
@@ -515,6 +616,145 @@ export class GameEngine {
     if (me) this.updateCamera(me, dt);
     this.updateShake(dt);
     this.clearEdgeTriggers();
+  }
+
+  private stepLocalHeroPhysics(
+    kin: {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      grounded: boolean;
+      coyote: number;
+      jumpBuffer: number;
+      jumpsLeft: number;
+      dropThrough: number;
+      hoverFuel: number;
+      isHovering: boolean;
+    },
+    h: HeroEntity,
+    pkt: PlayerInputPacket,
+    dt: number,
+    applyVisualSquash: boolean
+  ): void {
+    const def = HERO_MAP[h.heroId];
+    const stats = computeHeroStats(h.heroId, h.upgrades, h.bonusMaxHp);
+    const maxJumps = def.maxJumps + stats.extraJumps;
+    const slowMult = h.slowTimer > 0 ? 0.58 : 1;
+    const spinMult = h.spinTimer > 0 ? stats.skill2SpeedMult : 1;
+    const meltMult = h.meltdownTimer > 0 ? stats.skill2SpeedMult : 1;
+    const cloakMult = h.cloakTimer > 0 ? stats.skill2SpeedMult : 1;
+    const rotMult = h.rotTimer > 0 ? stats.skill2SpeedMult : 1;
+    const targetVx = pkt.moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult;
+    const accel = kin.grounded ? 2600 : 1750;
+
+    if (pkt.moveDir !== 0) {
+      kin.vx += Math.sign(targetVx - kin.vx) * Math.min(Math.abs(targetVx - kin.vx), accel * dt);
+      if (applyVisualSquash) h.walkCycle += dt * Math.abs(kin.vx) * 0.015;
+    } else {
+      const decel = kin.grounded ? 2400 : 700;
+      if (Math.abs(kin.vx) <= decel * dt) kin.vx = 0;
+      else kin.vx -= Math.sign(kin.vx) * decel * dt;
+    }
+
+    kin.dropThrough = Math.max(0, kin.dropThrough - dt);
+    if (pkt.wantJump) kin.jumpBuffer = 0.12;
+    else kin.jumpBuffer = Math.max(0, kin.jumpBuffer - dt);
+
+    if (kin.grounded) {
+      kin.coyote = 0.11;
+      kin.jumpsLeft = maxJumps;
+      kin.hoverFuel = 1;
+    } else {
+      kin.coyote = Math.max(0, kin.coyote - dt);
+    }
+
+    if (kin.jumpBuffer > 0) {
+      const activePad = JUMP_PADS.find(
+        (jp) =>
+          kin.x + h.w * 0.45 > jp.x &&
+          kin.x - h.w * 0.45 < jp.x + jp.w &&
+          kin.y + h.h / 2 >= jp.y - 12 &&
+          kin.y + h.h / 2 <= jp.y + 26
+      );
+      if (activePad) {
+        kin.vy = activePad.vy;
+        kin.vx = activePad.vx + pkt.moveDir * 140;
+        kin.grounded = false;
+        kin.coyote = 0;
+        kin.jumpBuffer = 0;
+        kin.jumpsLeft = Math.max(1, maxJumps - 1);
+        if (applyVisualSquash) {
+          h.squashX = 0.76;
+          h.squashY = 1.32;
+        }
+      } else if (kin.coyote > 0) {
+        kin.vy = -stats.jumpForce;
+        kin.grounded = false;
+        kin.coyote = 0;
+        kin.jumpBuffer = 0;
+        kin.jumpsLeft = Math.max(0, maxJumps - 1);
+        if (applyVisualSquash) {
+          h.squashX = 0.82;
+          h.squashY = 1.24;
+        }
+      } else if (kin.jumpsLeft > 0) {
+        kin.vy = -stats.jumpForce * 0.92;
+        kin.jumpsLeft -= 1;
+        kin.jumpBuffer = 0;
+        if (applyVisualSquash) {
+          h.squashX = 0.84;
+          h.squashY = 1.2;
+        }
+      }
+    }
+
+    if (pkt.wantDrop && kin.grounded) {
+      kin.dropThrough = 0.24;
+      kin.grounded = false;
+      kin.y += 4;
+    }
+
+    kin.isHovering = false;
+    let gravScale = 1;
+    if (def.canHover && !kin.grounded && pkt.holdingJump && kin.vy > -120 && (stats.infiniteHover || kin.hoverFuel > 0)) {
+      kin.isHovering = true;
+      if (!stats.infiniteHover) {
+        kin.hoverFuel = Math.max(0, kin.hoverFuel - dt * 0.45);
+      }
+      gravScale = def.hoverGravityScale;
+      if (kin.vy > 45) kin.vy = 45;
+    }
+
+    kin.vy = Math.min(920, kin.vy + GRAVITY * gravScale * dt);
+
+    kin.x += kin.vx * dt;
+    kin.x = Math.max(26 + h.w / 2, Math.min(WORLD_W - 26 - h.w / 2, kin.x));
+    const prevBottom = kin.y + h.h / 2;
+    kin.y += kin.vy * dt;
+    kin.grounded = false;
+    const newBottom = kin.y + h.h / 2;
+    const halfW = h.w / 2;
+    for (const p of PLATFORMS) {
+      if (!(kin.x + halfW > p.x && kin.x - halfW < p.x + p.w)) continue;
+      if (p.oneWay) {
+        if (kin.dropThrough > 0) continue;
+        if (kin.vy >= 0 && prevBottom <= p.y + 8 && newBottom >= p.y) {
+          kin.y = p.y - h.h / 2;
+          kin.vy = 0;
+          kin.grounded = true;
+        }
+      } else {
+        if (kin.vy >= 0 && prevBottom <= p.y + 14 && newBottom >= p.y) {
+          kin.y = p.y - h.h / 2;
+          kin.vy = 0;
+          kin.grounded = true;
+        } else if (kin.vy < 0 && kin.y - h.h / 2 < p.y + p.h && prevBottom > p.y + p.h) {
+          kin.y = p.y + p.h + h.h / 2;
+          kin.vy = 0;
+        }
+      }
+    }
   }
 
   private predictLocalHero(h: HeroEntity, pkt: PlayerInputPacket, dt: number): void {
@@ -539,127 +779,50 @@ export class GameEngine {
       return;
     }
 
-    const def = HERO_MAP[h.heroId];
-    const stats = computeHeroStats(h.heroId, h.upgrades, h.bonusMaxHp);
-    const maxJumps = def.maxJumps + stats.extraJumps;
-    const slowMult = h.slowTimer > 0 ? 0.58 : 1;
-    const spinMult = h.spinTimer > 0 ? stats.skill2SpeedMult : 1;
-    const meltMult = h.meltdownTimer > 0 ? stats.skill2SpeedMult : 1;
-    const cloakMult = h.cloakTimer > 0 ? stats.skill2SpeedMult : 1;
-    const rotMult = h.rotTimer > 0 ? stats.skill2SpeedMult : 1;
-    const targetVx = pkt.moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult;
-    const accel = h.grounded ? 2600 : 1750;
+    const kin = {
+      x: h.x,
+      y: h.y,
+      vx: h.vx,
+      vy: h.vy,
+      grounded: h.grounded,
+      coyote: this.predCoyote,
+      jumpBuffer: this.predJumpBuffer,
+      jumpsLeft: this.predJumpsLeft,
+      dropThrough: this.predDropThrough,
+      hoverFuel: this.predHoverFuel,
+      isHovering: h.isHovering,
+    };
 
-    if (pkt.moveDir !== 0) {
-      h.vx += Math.sign(targetVx - h.vx) * Math.min(Math.abs(targetVx - h.vx), accel * dt);
-      h.walkCycle += dt * Math.abs(h.vx) * 0.015;
-    } else {
-      const decel = h.grounded ? 2400 : 700;
-      if (Math.abs(h.vx) <= decel * dt) h.vx = 0;
-      else h.vx -= Math.sign(h.vx) * decel * dt;
-    }
+    this.stepLocalHeroPhysics(kin, h, pkt, dt, true);
 
-    this.predDropThrough = Math.max(0, this.predDropThrough - dt);
-    if (pkt.wantJump) this.predJumpBuffer = 0.12;
-    else this.predJumpBuffer = Math.max(0, this.predJumpBuffer - dt);
-
-    if (h.grounded) {
-      this.predCoyote = 0.11;
-      this.predJumpsLeft = maxJumps;
-      this.predHoverFuel = 1;
-    } else {
-      this.predCoyote = Math.max(0, this.predCoyote - dt);
-    }
-
-    if (this.predJumpBuffer > 0) {
-      if (this.predCoyote > 0) {
-        h.vy = -stats.jumpForce;
-        h.grounded = false;
-        this.predCoyote = 0;
-        this.predJumpBuffer = 0;
-        this.predJumpsLeft = Math.max(0, maxJumps - 1);
-        h.squashX = 0.82;
-        h.squashY = 1.24;
-      } else if (this.predJumpsLeft > 0) {
-        h.vy = -stats.jumpForce * 0.92;
-        this.predJumpsLeft -= 1;
-        this.predJumpBuffer = 0;
-        h.squashX = 0.84;
-        h.squashY = 1.2;
-      }
-    }
-
-    if (pkt.wantDrop && h.grounded) {
-      this.predDropThrough = 0.24;
-      h.grounded = false;
-      h.y += 4;
-    }
-
-    h.isHovering = false;
-    let gravScale = 1;
-    if (def.canHover && !h.grounded && pkt.holdingJump && h.vy > -120 && (stats.infiniteHover || this.predHoverFuel > 0)) {
-      h.isHovering = true;
-      if (!stats.infiniteHover) {
-        this.predHoverFuel = Math.max(0, this.predHoverFuel - dt * 0.45);
-      }
-      gravScale = def.hoverGravityScale;
-      if (h.vy > 45) h.vy = 45;
-    }
-
-    h.vy = Math.min(920, h.vy + GRAVITY * gravScale * dt);
-
-    h.x += h.vx * dt;
-    h.x = Math.max(26 + h.w / 2, Math.min(WORLD_W - 26 - h.w / 2, h.x));
-    const prevBottom = h.y + h.h / 2;
-    h.y += h.vy * dt;
-    h.grounded = false;
-    const newBottom = h.y + h.h / 2;
-    const halfW = h.w / 2;
-    for (const p of PLATFORMS) {
-      if (!(h.x + halfW > p.x && h.x - halfW < p.x + p.w)) continue;
-      if (p.oneWay) {
-        if (this.predDropThrough > 0) continue;
-        if (h.vy >= 0 && prevBottom <= p.y + 8 && newBottom >= p.y) {
-          h.y = p.y - h.h / 2;
-          h.vy = 0;
-          h.grounded = true;
-        }
-      } else {
-        if (h.vy >= 0 && prevBottom <= p.y + 14 && newBottom >= p.y) {
-          h.y = p.y - h.h / 2;
-          h.vy = 0;
-          h.grounded = true;
-        } else if (h.vy < 0 && h.y - h.h / 2 < p.y + p.h && prevBottom > p.y + p.h) {
-          h.y = p.y + p.h + h.h / 2;
-          h.vy = 0;
-        }
-      }
-    }
-
-    for (const jp of JUMP_PADS) {
-      if (
-        h.x + h.w * 0.4 > jp.x &&
-        h.x - h.w * 0.4 < jp.x + jp.w &&
-        h.y + h.h / 2 >= jp.y - 6 &&
-        h.y + h.h / 2 <= jp.y + 22 &&
-        h.vy >= -80
-      ) {
-        h.vy = jp.vy;
-        h.vx = jp.vx + pkt.moveDir * 140;
-        h.grounded = false;
-      }
-    }
+    h.x = kin.x;
+    h.y = kin.y;
+    h.vx = kin.vx;
+    h.vy = kin.vy;
+    h.grounded = kin.grounded;
+    h.isHovering = kin.isHovering;
+    this.predCoyote = kin.coyote;
+    this.predJumpBuffer = kin.jumpBuffer;
+    this.predJumpsLeft = kin.jumpsLeft;
+    this.predDropThrough = kin.dropThrough;
+    this.predHoverFuel = kin.hoverFuel;
   }
 
   private applyServerSnapshot(snap: WorldSnapshot, hardReset: boolean): void {
     this.latestSnapshot = snap;
-    this.renderTime = snap.matchTime;
+    if (hardReset || Math.abs(snap.matchTime - this.renderTime) > 0.6) {
+      this.renderTime = snap.matchTime;
+    } else {
+      // Smoothly phase-lock renderTime so visual oscillators never jump backward every 33ms
+      this.renderTime += (snap.matchTime - this.renderTime) * 0.12;
+    }
     this.waveTier = snap.waveTier;
     this.waveTierName = snap.waveTierName;
     this.blueKills = snap.blueKills;
     this.redKills = snap.redKills;
     this.onlineHumanCount = snap.humanCount;
     this.banner = snap.banner;
+    this.killFeed = snap.killFeed ?? [];
 
     if (snap.phase === 'VICTORY' || snap.phase === 'DEFEAT') {
       const blueWon = snap.phase === 'VICTORY';
@@ -792,31 +955,79 @@ export class GameEngine {
         existing.droidKills = sh.droidKills;
 
         if (isMe) {
-          const err = Math.hypot(sh.x - existing.x, sh.y - existing.y);
-          if (err > 68 || sh.dashTimer > 0 || sh.hookedById || !sh.alive || sh.inDropPod) {
+          // Prune acknowledged inputs using server's lastAckSeq
+          if (sh.lastAckSeq > 0) {
+            while (this.pendingInputs.length > 0 && this.pendingInputs[0].seq <= sh.lastAckSeq) {
+              this.pendingInputs.shift();
+            }
+          }
+
+          if (sh.inDropPod) {
+            this.pendingInputs.length = 0;
+            const podErr = Math.hypot(sh.dropPodX - existing.dropPodX, sh.dropPodY - existing.dropPodY);
+            if (podErr > 120) {
+              existing.dropPodX = sh.dropPodX;
+              existing.dropPodY = sh.dropPodY;
+            } else {
+              existing.dropPodX += (sh.dropPodX - existing.dropPodX) * 0.28;
+              existing.dropPodY += (sh.dropPodY - existing.dropPodY) * 0.28;
+            }
+            existing.x = existing.dropPodX;
+            existing.y = existing.dropPodY;
+            existing.vx = sh.vx;
+            existing.vy = sh.vy;
+            existing.grounded = false;
+          } else if (sh.dashTimer > 0 || sh.hookedById || !sh.alive || sh.stunTimer > 0) {
+            this.pendingInputs.length = 0;
             existing.x = sh.x;
             existing.y = sh.y;
             existing.vx = sh.vx;
             existing.vy = sh.vy;
             existing.grounded = sh.grounded;
-          } else if (err > 5) {
-            existing.x += (sh.x - existing.x) * 0.35;
-            existing.y += (sh.y - existing.y) * 0.35;
-            existing.grounded = sh.grounded;
-          }
-          if (sh.inDropPod) {
-            existing.dropPodX += (sh.dropPodX - existing.dropPodX) * 0.4;
-            existing.dropPodY += (sh.dropPodY - existing.dropPodY) * 0.5;
+          } else {
+            // Replay unacknowledged inputs on top of authoritative server state
+            const stats = computeHeroStats(existing.heroId, existing.upgrades, existing.bonusMaxHp);
+            const rec = {
+              x: sh.x,
+              y: sh.y,
+              vx: sh.vx,
+              vy: sh.vy,
+              grounded: sh.grounded,
+              coyote: sh.grounded ? 0.11 : this.predCoyote,
+              jumpBuffer: 0,
+              jumpsLeft: sh.grounded ? def.maxJumps + stats.extraJumps : this.predJumpsLeft,
+              dropThrough: this.predDropThrough,
+              hoverFuel: sh.grounded ? 1 : this.predHoverFuel,
+              isHovering: sh.isHovering,
+            };
+            for (const entry of this.pendingInputs) {
+              this.stepLocalHeroPhysics(rec, existing, entry.pkt, entry.dt, false);
+            }
+
+            const err = Math.hypot(rec.x - existing.x, rec.y - existing.y);
+            if (err > 120) {
+              existing.x = rec.x;
+              existing.y = rec.y;
+              existing.vx = rec.vx;
+              existing.vy = rec.vy;
+              existing.grounded = rec.grounded;
+            } else if (err > 4) {
+              existing.x += (rec.x - existing.x) * 0.22;
+              existing.y += (rec.y - existing.y) * 0.22;
+              if (err > 28) {
+                existing.vx += (rec.vx - existing.vx) * 0.3;
+                existing.vy += (rec.vy - existing.vy) * 0.3;
+                existing.grounded = rec.grounded;
+              }
+            }
           }
         } else {
           const err = Math.hypot(sh.x - existing.x, sh.y - existing.y);
-          if (err > 95 || sh.hookedById) {
+          if (err > 140 || sh.hookedById) {
             existing.x = sh.x;
             existing.y = sh.y;
-          } else {
-            existing.x += (sh.x - existing.x) * 0.55;
-            existing.y += (sh.y - existing.y) * 0.55;
           }
+          this.remoteHeroTargets.set(sh.id, { x: sh.x, y: sh.y, vx: sh.vx, vy: sh.vy });
           existing.vx = sh.vx;
           existing.vy = sh.vy;
           existing.facing = sh.facing;
@@ -829,7 +1040,10 @@ export class GameEngine {
       }
     }
     for (const id of this.mirrorHeroes.keys()) {
-      if (!seenHeroIds.has(id)) this.mirrorHeroes.delete(id);
+      if (!seenHeroIds.has(id)) {
+        this.mirrorHeroes.delete(id);
+        this.remoteHeroTargets.delete(id);
+      }
     }
 
     // Droids
@@ -848,9 +1062,14 @@ export class GameEngine {
           slowTimer: 0,
           stunTimer: 0,
         });
+        this.remoteDroidTargets.set(sd.id, { x: sd.x, y: sd.y, vx: sd.vx, vy: sd.vy });
       } else {
-        ex.x += (sd.x - ex.x) * 0.6;
-        ex.y += (sd.y - ex.y) * 0.6;
+        const err = Math.hypot(sd.x - ex.x, sd.y - ex.y);
+        if (err > 120) {
+          ex.x = sd.x;
+          ex.y = sd.y;
+        }
+        this.remoteDroidTargets.set(sd.id, { x: sd.x, y: sd.y, vx: sd.vx, vy: sd.vy });
         ex.vx = sd.vx;
         ex.vy = sd.vy;
         ex.hp = sd.hp;
@@ -860,7 +1079,10 @@ export class GameEngine {
       }
     }
     for (const id of this.mirrorDroids.keys()) {
-      if (!seenDroids.has(id)) this.mirrorDroids.delete(id);
+      if (!seenDroids.has(id)) {
+        this.mirrorDroids.delete(id);
+        this.remoteDroidTargets.delete(id);
+      }
     }
 
     // Turrets
@@ -1274,8 +1496,14 @@ export class GameEngine {
     const stats = computeHeroStats(player.heroId, player.upgrades, player.bonusMaxHp);
     const def = HERO_MAP[player.heroId];
     const affordableUpgrades = def.upgrades.filter(
-      (u) => (player.upgrades[u.id] ?? 0) < u.maxRank && player.solar >= u.cost
+      (u) => canForgeTalent(player.upgrades, player.heroId, u, player.solar).allowed
     ).length;
+    const takenHumanHeroes: HeroId[] =
+      this.mode === 'solo' && this.localSim
+        ? this.localSim.getHumanTakenHeroes()
+        : (this.latestSnapshot?.heroes ?? [])
+            .filter((sh) => sh.isHuman && sh.id !== this.playerEntityId)
+            .map((sh) => sh.heroId);
 
     const minimap: MinimapBlip[] = [
       ...cores.map((c) => ({ x: c.x / WORLD_W, y: (c.y - 60) / WORLD_H, team: c.team, kind: 'core' as const, alive: c.hp > 0 })),
@@ -1365,7 +1593,21 @@ export class GameEngine {
         humanCount: this.mode === 'solo' ? 1 : this.onlineHumanCount,
       },
       banner: this.mode === 'solo' && this.localSim ? this.localSim.banner : this.banner,
+      killFeed: this.mode === 'solo' && this.localSim ? this.localSim.killFeed.map((k) => ({ ...k })) : this.killFeed,
       minimap,
+      minimapViewport: {
+        x: Math.max(0, Math.min(1, this.camX / WORLD_W)),
+        y: Math.max(0, Math.min(1, this.camY / WORLD_H)),
+        w: Math.max(0.08, Math.min(1, (this.canvas.clientWidth || 1280) / WORLD_W)),
+        h: Math.max(0.15, Math.min(1, (this.canvas.clientHeight || 720) / WORLD_H)),
+      },
+      turretStatus: turrets.map((t) => ({
+        team: t.team,
+        lane: t.lane,
+        tier: t.tier,
+        alive: t.alive,
+      })),
+      takenHumanHeroes,
       scoreboard,
     });
   }

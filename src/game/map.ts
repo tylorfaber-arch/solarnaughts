@@ -49,10 +49,16 @@ export const PLATFORMS: Platform[] = [
   { id: 'step_red_high', x: WORLD_W - 1295, y: 672, w: 145, h: 14, oneWay: true, style: 'sanctuary_glass' },
   { id: 'step_red_low', x: WORLD_W - 940, y: 864, w: 140, h: 14, oneWay: true, style: 'sanctuary_glass' },
 
-  // Top Lane Cathedral Nave Battlements (Left, Central Sanctuary Glass, Right)
-  { id: 'top_left', x: 640, y: 575, w: 1620, h: 28, oneWay: false, style: 'battlement' },
+  // Top Lane Cathedral Nave Battlements (Solid stone decks under towers + One-way glass hatches above jump pads!)
+  { id: 'top_blue_pad_hatch', x: 640, y: 575, w: 300, h: 18, oneWay: true, style: 'sanctuary_glass' },
+  { id: 'top_left_inner', x: 940, y: 575, w: 480, h: 28, oneWay: false, style: 'battlement' },
+  { id: 'top_blue_mid_hatch', x: 1420, y: 575, w: 260, h: 18, oneWay: true, style: 'sanctuary_glass' },
+  { id: 'top_left_outer', x: 1680, y: 575, w: 580, h: 28, oneWay: false, style: 'battlement' },
   { id: 'top_mid_glass', x: 2260, y: 575, w: 880, h: 18, oneWay: true, style: 'sanctuary_glass' },
-  { id: 'top_right', x: 3140, y: 575, w: 1620, h: 28, oneWay: false, style: 'battlement' },
+  { id: 'top_right_outer', x: 3140, y: 575, w: 580, h: 28, oneWay: false, style: 'battlement' },
+  { id: 'top_red_mid_hatch', x: 3720, y: 575, w: 260, h: 18, oneWay: true, style: 'sanctuary_glass' },
+  { id: 'top_right_inner', x: 3980, y: 575, w: 480, h: 28, oneWay: false, style: 'battlement' },
+  { id: 'top_red_pad_hatch', x: 4460, y: 575, w: 300, h: 18, oneWay: true, style: 'sanctuary_glass' },
 
   // Mid-Height Gothic Alcoves (Connecting Bottom & Top Lanes along both tower tiers)
   { id: 'mid_blue_inner', x: 930, y: 770, w: 220, h: 18, oneWay: true, style: 'sanctuary_glass' },
@@ -74,20 +80,20 @@ export const PLATFORMS: Platform[] = [
 ];
 
 export const JUMP_PADS: JumpPad[] = [
-  // Base Launchers -> Top Nave
-  { id: 'jp_blue_base', x: 560, y: 944, w: 68, vx: 135, vy: -880, color: '#38BDF8' },
-  { id: 'jp_red_base', x: WORLD_W - 628, y: 944, w: 68, vx: -135, vy: -880, color: '#F43F5E' },
-  // Outer Lane Launchers -> Top Nave
-  { id: 'jp_blue_mid', x: 1520, y: 944, w: 64, vx: 40, vy: -860, color: '#38BDF8' },
-  { id: 'jp_red_mid', x: WORLD_W - 1584, y: 944, w: 64, vx: -40, vy: -860, color: '#F43F5E' },
+  // Base Launchers (well ahead of Ancient Cores, directly beneath one-way Top Nave hatches)
+  { id: 'jp_blue_base', x: 705, y: 944, w: 68, vx: 95, vy: -1060, color: '#38BDF8' },
+  { id: 'jp_red_base', x: WORLD_W - 773, y: 944, w: 68, vx: -95, vy: -1060, color: '#F43F5E' },
+  // Mid-Lane Launchers (directly beneath one-way Top Nave hatches, full Top Nave clearance)
+  { id: 'jp_blue_mid', x: 1518, y: 944, w: 64, vx: 25, vy: -1060, color: '#38BDF8' },
+  { id: 'jp_red_mid', x: WORLD_W - 1582, y: 944, w: 64, vx: -25, vy: -1060, color: '#F43F5E' },
   // Sunken Primordial Crypt Launchers -> High Center Nave
-  { id: 'jp_crypt_l', x: 2330, y: 1049, w: 64, vx: 65, vy: -985, color: '#10B981' },
-  { id: 'jp_crypt_r', x: 3006, y: 1049, w: 64, vx: -65, vy: -985, color: '#10B981' },
+  { id: 'jp_crypt_l', x: 2330, y: 1049, w: 64, vx: 65, vy: -1025, color: '#10B981' },
+  { id: 'jp_crypt_r', x: 3006, y: 1049, w: 64, vx: -65, vy: -1025, color: '#10B981' },
   // Top-Nave Upper Launchers -> Very Top Cathedral Rafters (Heavy-Hero Express Access!)
-  { id: 'jp_top_blue_rafter', x: 1295, y: 559, w: 64, vx: 145, vy: -810, color: '#F59E0B' },
-  { id: 'jp_top_mid_l', x: 2150, y: 559, w: 64, vx: 210, vy: -835, color: '#F59E0B' },
-  { id: 'jp_top_mid_r', x: WORLD_W - 2214, y: 559, w: 64, vx: -210, vy: -835, color: '#F59E0B' },
-  { id: 'jp_top_red_rafter', x: WORLD_W - 1359, y: 559, w: 64, vx: -145, vy: -810, color: '#F59E0B' },
+  { id: 'jp_top_blue_rafter', x: 1295, y: 559, w: 64, vx: 145, vy: -820, color: '#F59E0B' },
+  { id: 'jp_top_mid_l', x: 2150, y: 559, w: 64, vx: 210, vy: -840, color: '#F59E0B' },
+  { id: 'jp_top_mid_r', x: WORLD_W - 2214, y: 559, w: 64, vx: -210, vy: -840, color: '#F59E0B' },
+  { id: 'jp_top_red_rafter', x: WORLD_W - 1359, y: 559, w: 64, vx: -145, vy: -820, color: '#F59E0B' },
 ];
 
 // 2 Sets of Towers per Lane (4 per team = 8 Towers Total!)

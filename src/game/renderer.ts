@@ -1,5 +1,6 @@
 import { HERO_MAP } from './heroes';
 import { BASE_ZONES, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
+import { ensureArenaArtLoaded, type ArenaArtAssets, type ProcessedSprite } from './sprites';
 import type {
   CoreDrillEntity,
   DroidEntity,
@@ -68,81 +69,80 @@ export function renderArena(
   height: number,
   state: RenderState
 ): void {
+  const art = ensureArenaArtLoaded(ctx);
   ctx.save();
-
-  // 1. Storm-Torn Medieval Alien Invasion Sky
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
-  skyGrad.addColorStop(0, '#050812');
-  skyGrad.addColorStop(0.38, '#0D1426');
-  skyGrad.addColorStop(0.76, '#1A1730');
-  skyGrad.addColorStop(1, '#26192A');
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, width, height);
 
   const camX = state.camX + state.shakeX;
   const camY = state.camY + state.shakeY;
 
-  // 2. Cosmic Slipstream Rift Tear & Fractured Eclipse Moon
-  drawSkyRiftAndMoon(ctx, width, height, camX, state.time);
+  // 1. Painted 3-Biome Gothic-Alien Cathedral Parallax Backdrop (matches Champion Select art)
+  const drewPaintedBg = drawPaintedCathedralBackdrop(ctx, width, height, camX, camY, state.time, art);
+  if (!drewPaintedBg) {
+    // Fallback procedural vista for the first few milliseconds before images decode
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, height);
+    skyGrad.addColorStop(0, '#050812');
+    skyGrad.addColorStop(0.38, '#0D1426');
+    skyGrad.addColorStop(0.76, '#1A1730');
+    skyGrad.addColorStop(1, '#26192A');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, width, height);
 
-  // 3. Distant Rift Stars
-  for (let i = 0; i < STARS.length; i++) {
-    const s = STARS[i];
-    const sx = (((s.x - camX * 0.05) % (width + 120)) + (width + 120)) % (width + 120) - 60;
-    const sy = s.y * (height / 860);
-    const alpha = 0.3 + 0.5 * Math.sin(state.time * 2.0 + s.twinkle);
-    ctx.fillStyle = `rgba(226, 238, 255, ${alpha.toFixed(2)})`;
-    ctx.beginPath();
-    ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
-    ctx.fill();
+    drawSkyRiftAndMoon(ctx, width, height, camX, state.time);
+    for (let i = 0; i < STARS.length; i++) {
+      const s = STARS[i];
+      const sx = (((s.x - camX * 0.05) % (width + 120)) + (width + 120)) % (width + 120) - 60;
+      const sy = s.y * (height / 860);
+      const alpha = 0.3 + 0.5 * Math.sin(state.time * 2.0 + s.twinkle);
+      ctx.fillStyle = `rgba(226, 238, 255, ${alpha.toFixed(2)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    drawAlienWarships(ctx, width, height, camX, state.time);
+    drawCathedralSkyline(ctx, width, height, camX, state.time);
   }
-
-  // 4. Hovering Alien Dreadnoughts & Escorts (slow parallax)
-  drawAlienWarships(ctx, width, height, camX, state.time);
-
-  // 5. Layered Shattered Gothic Cathedral Skyline (Sanctum Gold -> Crypt Emerald -> Invasion Crimson)
-  drawCathedralSkyline(ctx, width, height, camX, state.time);
 
   // === ENTER WORLD SPACE ===
   ctx.save();
   ctx.translate(-Math.round(camX), -Math.round(camY));
 
-  // 6. Biome-Differentiated Cathedral Interior, Crashed Alien Obelisk & Sunken Crypt Pit
-  drawCathedralArchitecture(ctx, camX, width, state.time);
+  // 6. Biome-Differentiated Cathedral Interior Columns, Wall Braziers & Crypt Pit
+  drawCathedralArchitecture(ctx, camX, width, state.time, art);
+  drawCathedralSunbeams(ctx, camX, width, state.time);
 
   // 7. Sanctum & Invasion Healing Altars
-  drawBaseZone(ctx, BASE_ZONES.blue, state.time);
-  drawBaseZone(ctx, BASE_ZONES.red, state.time);
+  drawBaseZone(ctx, BASE_ZONES.blue, state.time, art);
+  drawBaseZone(ctx, BASE_ZONES.red, state.time, art);
 
-  // 8. Platforms (Gothic Stone, Crenellated Battlements & Sanctuary Hard-Light Glass)
+  // 8. Platforms (Carved Gothic Ashlar Stone & Ornate Stained-Glass Iron Catwalks)
   for (const p of PLATFORMS) {
     if (p.x + p.w < camX - 100 || p.x > camX + width + 100) continue;
-    drawPlatform(ctx, p, state.time);
+    drawPlatform(ctx, p, state.time, art);
   }
 
   // 9. Runic Gravity Jump Pads
+  const playerHero = state.heroes.find((h) => h.isPlayer);
   for (const jp of JUMP_PADS) {
     if (jp.x + jp.w < camX - 80 || jp.x > camX + width + 80) continue;
-    drawJumpPad(ctx, jp, state.time);
+    drawJumpPad(ctx, jp, state.time, playerHero, art.jumpPad);
   }
 
   // 10. Relic Essence Shards
   for (const sc of state.solarCubes) {
-    if (sc.active) drawRelicShard(ctx, sc, state.time);
+    if (sc.active) drawRelicShard(ctx, sc, state.time, art.relicShard);
   }
 
   // 11. Neutral Crypt Spirits
   for (const creep of state.creeps) {
-    if (creep.alive) drawCryptSpirit(ctx, creep, state.time);
+    if (creep.alive) drawCryptSpirit(ctx, creep, state.time, art.cryptSpirit);
   }
 
   // 12. Ancient Cores & 2-Tier Reliquary Towers
-  const playerHero = state.heroes.find((h) => h.isPlayer);
   for (const core of state.cores) {
-    drawAncientCore(ctx, core, state.time);
+    drawAncientCore(ctx, core, state.time, art.core);
   }
   for (const turret of state.turrets) {
-    drawReliquaryTower(ctx, turret, state.time, playerHero);
+    drawReliquaryTower(ctx, turret, state.time, playerHero, art.tower);
   }
 
   // 13. Ground Hazards & Totem Auras
@@ -156,7 +156,7 @@ export function renderArena(
   // 14. Escalating Lane Creeps & Bone-Borgs
   for (const d of state.droids) {
     if (d.x < camX - 100 || d.x > camX + width + 100) continue;
-    drawDroid(ctx, d, state.time);
+    drawDroid(ctx, d, state.time, art.trooper, art.boneBorg);
   }
 
   // 15. Active Abyssal Chain Hooks
@@ -167,9 +167,9 @@ export function renderArena(
   // 16. Champions (alive or descending in drop pods)
   for (const h of state.heroes) {
     if (h.inDropPod) {
-      drawDropPodSequence(ctx, h, state.time);
+      drawDropPodSequence(ctx, h, state.time, art);
     } else if (h.alive) {
-      drawHero(ctx, h, state.time, state.localTeam);
+      drawHero(ctx, h, state.time, state.localTeam, art.heroes[h.heroId]);
     }
   }
 
@@ -236,11 +236,135 @@ export function renderArena(
   ctx.restore();
   // === EXIT WORLD SPACE ===
 
+  // 21b. Subtle Cathedral Edge Vignette (frames combat & sharpens HUD corner contrast)
+  const vig = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.5,
+    Math.min(width, height) * 0.36,
+    width * 0.5,
+    height * 0.5,
+    Math.max(width, height) * 0.72
+  );
+  vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vig.addColorStop(1, 'rgba(4, 6, 13, 0.42)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, width, height);
+
   // 22. Tactical Aim Reticle
   if (playerHero && playerHero.alive && !playerHero.inDropPod) {
     drawCrosshair(ctx, state.mouseScreenX, state.mouseScreenY, HERO_MAP[playerHero.heroId].accentColor);
   }
 
+  ctx.restore();
+}
+
+function drawPaintedCathedralBackdrop(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  camX: number,
+  camY: number,
+  time: number,
+  art: ArenaArtAssets
+): boolean {
+  const { bgSanctum, bgCrypt, bgInvasion } = art;
+  if (!bgSanctum && !bgCrypt && !bgInvasion) return false;
+
+  // Normalized camera position across the 5400px cathedral (0 = Sanctum, 0.5 = Crypt, 1 = Invasion)
+  const maxCamX = Math.max(1, WORLD_W - width);
+  const maxCamY = Math.max(1, WORLD_H - height);
+  const t = Math.max(0, Math.min(1, camX / maxCamX));
+  const ty = Math.max(0, Math.min(1, camY / maxCamY));
+
+  // Smooth 3-biome cross-fade weights across Sanctum (left), Primordial Crypt (center), Invasion (right)
+  const wSanctum = Math.max(0, Math.min(1, 1 - Math.max(0, (t - 0.16) / 0.28)));
+  const wInvasion = Math.max(0, Math.min(1, (t - 0.56) / 0.28));
+  const wCrypt = Math.max(0, Math.min(1, 1 - Math.abs(t - 0.5) / 0.38));
+
+  const drawCover = (img: HTMLImageElement | null, alpha: number, parallaxX: number) => {
+    if (!img || alpha <= 0.01) return;
+    const overscan = 1.22;
+    const imgAspect = img.naturalWidth / Math.max(1, img.naturalHeight);
+    const viewAspect = width / Math.max(1, height);
+    let drawW: number;
+    let drawH: number;
+    if (viewAspect > imgAspect) {
+      drawW = width * overscan;
+      drawH = drawW / imgAspect;
+    } else {
+      drawH = height * overscan;
+      drawW = drawH * imgAspect;
+    }
+    const maxPanX = Math.max(0, drawW - width);
+    const maxPanY = Math.max(0, drawH - height);
+    const dx = -maxPanX * parallaxX;
+    const dy = -maxPanY * (0.24 + ty * 0.52);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, alpha);
+    ctx.drawImage(img, dx, dy, drawW, drawH);
+    ctx.restore();
+  };
+
+  ctx.fillStyle = '#060912';
+  ctx.fillRect(0, 0, width, height);
+
+  // Layer the 3 painted cathedral vistas with seamless cross-fades & 2D parallax depth
+  drawCover(bgCrypt ?? bgSanctum ?? bgInvasion, 1, t);
+  if (wSanctum > 0.01) drawCover(bgSanctum, wSanctum, t * 0.9);
+  if (wCrypt > 0.01 && bgCrypt) drawCover(bgCrypt, wCrypt, t);
+  if (wInvasion > 0.01) drawCover(bgInvasion, wInvasion, Math.min(1, 0.1 + t * 0.9));
+
+  // Balanced atmospheric depth glaze: vivid painted cathedral above, crisp silhouette readability below
+  const glaze = ctx.createLinearGradient(0, 0, 0, height);
+  glaze.addColorStop(0, 'rgba(5, 8, 16, 0.16)');
+  glaze.addColorStop(0.48, 'rgba(7, 11, 20, 0.27)');
+  glaze.addColorStop(1, 'rgba(6, 9, 16, 0.42)');
+  ctx.fillStyle = glaze;
+  ctx.fillRect(0, 0, width, height);
+
+  // Subtle biome color atmosphere pulse
+  const pulse = 0.04 + 0.02 * Math.sin(time * 1.4);
+  if (wSanctum > 0.25) {
+    ctx.fillStyle = `rgba(245, 158, 11, ${(pulse * wSanctum).toFixed(3)})`;
+    ctx.fillRect(0, 0, width, height);
+  } else if (wInvasion > 0.25) {
+    ctx.fillStyle = `rgba(244, 63, 94, ${(pulse * wInvasion).toFixed(3)})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+  return true;
+}
+
+function drawCathedralSunbeams(
+  ctx: CanvasRenderingContext2D,
+  camX: number,
+  viewW: number,
+  time: number
+): void {
+  ctx.save();
+  const beams = [
+    { x: 960, w: 135, col: 'rgba(251, 191, 36, 0.055)' },
+    { x: 1740, w: 120, col: 'rgba(56, 189, 248, 0.05)' },
+    { x: 2700, w: 170, col: 'rgba(52, 211, 153, 0.055)' },
+    { x: 3660, w: 120, col: 'rgba(244, 63, 94, 0.05)' },
+    { x: 4440, w: 135, col: 'rgba(192, 132, 252, 0.05)' },
+  ];
+  for (let i = 0; i < beams.length; i++) {
+    const b = beams[i];
+    if (b.x + 280 < camX || b.x - 160 > camX + viewW) continue;
+    const sway = Math.sin(time * 0.6 + i * 1.4) * 12;
+    const g = ctx.createLinearGradient(b.x, 90, b.x + 150, 960);
+    g.addColorStop(0, b.col);
+    g.addColorStop(0.75, b.col);
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(b.x - b.w * 0.45 + sway, 90);
+    ctx.lineTo(b.x + b.w * 0.45 + sway, 90);
+    ctx.lineTo(b.x + b.w * 1.15 + 160 + sway, 960);
+    ctx.lineTo(b.x - b.w * 0.15 + 160 + sway, 960);
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -477,216 +601,159 @@ function drawCathedralArchitecture(
   ctx: CanvasRenderingContext2D,
   camX: number,
   viewW: number,
-  time: number
+  time: number,
+  art: ArenaArtAssets
 ): void {
   ctx.save();
 
-  // 1. Vaulted Gothic Stone Columns Supporting the Top Cathedral Nave
-  const pillarXs = [780, 1340, 1940, 2260, 3140, 3460, 4060, 4620];
+  // 1. Vaulted Gothic Stone Columns Supporting the Top Cathedral Nave (aligned strictly under solid stone decks, clear of jump-pad hatches)
+  const pillarXs = [990, 1370, 1940, 2260, 3140, 3460, 4030, 4410];
   for (const px of pillarXs) {
-    if (px < camX - 180 || px > camX + viewW + 180) continue;
+    if (px < camX - 200 || px > camX + viewW + 200) continue;
     const isSanctum = px < WORLD_W / 2;
     const isCenter = px === 2260 || px === 3140;
 
-    // Vaulted rib arch springing outward from top of column
-    ctx.strokeStyle = '#1E2438';
-    ctx.lineWidth = 10;
-    ctx.beginPath();
-    ctx.moveTo(px - 22, 650);
-    ctx.quadraticCurveTo(px - 75, 595, px - 125, 588);
-    ctx.moveTo(px + 22, 650);
-    ctx.quadraticCurveTo(px + 75, 595, px + 125, 588);
-    ctx.stroke();
+    if (art.cathedralPillar) {
+      // Hand-inked carved Gothic cathedral column spanning Top Nave -> Bottom Floor
+      const pillarH = 392;
+      const pillarW = pillarH * art.cathedralPillar.aspect;
+      const mirror = isSanctum ? 1 : -1;
 
-    // Column stone shaft
-    const pGrad = ctx.createLinearGradient(px - 24, 0, px + 24, 0);
-    pGrad.addColorStop(0, '#101421');
-    pGrad.addColorStop(0.35, '#20263A');
-    pGrad.addColorStop(0.75, '#171C2C');
-    pGrad.addColorStop(1, '#0C0F19');
-    ctx.fillStyle = pGrad;
-    ctx.fillRect(px - 24, 578, 48, 382);
-    ctx.strokeStyle = '#2B334D';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(px - 24, 578, 48, 382);
+      ctx.save();
+      ctx.globalAlpha = 0.86;
+      ctx.translate(px, 574);
+      ctx.scale(mirror, 1);
+      ctx.drawImage(art.cathedralPillar.canvas, -pillarW / 2, 0, pillarW, pillarH);
+      ctx.restore();
 
-    // Carved capital & plinth
-    ctx.fillStyle = '#29314A';
-    ctx.fillRect(px - 32, 578, 64, 16);
-    ctx.fillRect(px - 32, 942, 64, 18);
-
-    // Biome-specific inlays: Sanctum Gold Circuits vs Invasion Crimson-Cyan Crystals
-    if (isCenter) {
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.42)';
-      ctx.lineWidth = 2.4;
+      // Live flickering torchlight aura on the pillar's wrought-iron sconce
+      const torchX = px + mirror * pillarW * 0.34;
+      const torchY = 574 + pillarH * 0.44;
+      const flicker = 0.78 + 0.22 * Math.sin(time * 9.5 + px);
+      const torchCol = isCenter ? '#34D399' : isSanctum ? '#F59E0B' : '#F43F5E';
+      const tGlow = ctx.createRadialGradient(torchX, torchY, 4, torchX, torchY, 64 * flicker);
+      tGlow.addColorStop(0, `${torchCol}55`);
+      tGlow.addColorStop(0.5, `${torchCol}1C`);
+      tGlow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = tGlow;
       ctx.beginPath();
-      ctx.moveTo(px, 600);
-      ctx.lineTo(px, 940);
-      ctx.stroke();
-    } else if (isSanctum) {
-      // Engraved golden circuit & hanging cathedral banner
-      ctx.strokeStyle = 'rgba(245, 158, 11, 0.34)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(px, 600);
-      ctx.lineTo(px, 940);
-      ctx.stroke();
-
-      // Swaying Sanctum Banner
-      const sway = Math.sin(time * 2.2 + px * 0.01) * 4;
-      ctx.fillStyle = '#1E3A8A';
-      ctx.strokeStyle = '#F59E0B';
-      ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(px - 14, 622);
-      ctx.lineTo(px + 14, 622);
-      ctx.lineTo(px + 14 + sway, 720);
-      ctx.lineTo(px + sway * 1.15, 742);
-      ctx.lineTo(px - 14 + sway, 720);
-      ctx.closePath();
+      ctx.arc(torchX, torchY, 64 * flicker, 0, Math.PI * 2);
       ctx.fill();
-      ctx.stroke();
 
-      // Golden banner cross emblem
-      ctx.fillStyle = '#FBBF24';
-      ctx.fillRect(px - 2 + sway * 0.4, 646, 4, 34);
-      ctx.fillRect(px - 8 + sway * 0.4, 656, 16, 4);
-
-      // Flickering Wrought-Iron Wall Brazier
-      drawWallBrazier(ctx, px, 845, '#F59E0B', '#FEF08A', time + px);
+      // Subtle swaying faction pennant on outer nave columns for territory clarity
+      if (!isCenter) {
+        const sway = Math.sin(time * 2.3 + px * 0.01) * 4;
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        if (isSanctum) {
+          ctx.fillStyle = '#1E3A8A';
+          ctx.strokeStyle = '#F59E0B';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(px - 14, 678);
+          ctx.lineTo(px + 14, 678);
+          ctx.lineTo(px + 14 + sway, 766);
+          ctx.lineTo(px + sway * 1.15, 788);
+          ctx.lineTo(px - 14 + sway, 766);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#FBBF24';
+          ctx.fillRect(px - 2 + sway * 0.4, 700, 4, 30);
+          ctx.fillRect(px - 8 + sway * 0.4, 709, 16, 4);
+        } else {
+          ctx.fillStyle = '#881337';
+          ctx.strokeStyle = '#38BDF8';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(px - 14, 678);
+          ctx.lineTo(px + 14, 678);
+          ctx.lineTo(px + 12 + sway, 766);
+          ctx.lineTo(px + 3 + sway, 746);
+          ctx.lineTo(px - 5 + sway, 782);
+          ctx.lineTo(px - 14 + sway, 754);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
     } else {
-      // Invasion Wing: Jagged Alien Obsidian Crystal Spire erupting through stone!
-      ctx.strokeStyle = 'rgba(244, 63, 94, 0.4)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(px - 4, 605);
-      ctx.lineTo(px + 5, 720);
-      ctx.lineTo(px - 3, 830);
-      ctx.lineTo(px + 4, 940);
-      ctx.stroke();
-
-      // Tattered Crimson Invasion Pennant
-      const sway = Math.sin(time * 2.8 + px * 0.01) * 5;
-      ctx.fillStyle = '#881337';
-      ctx.strokeStyle = '#38BDF8';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(px - 14, 622);
-      ctx.lineTo(px + 14, 622);
-      ctx.lineTo(px + 12 + sway, 718);
-      ctx.lineTo(px + 3 + sway, 696);
-      ctx.lineTo(px - 5 + sway, 734);
-      ctx.lineTo(px - 14 + sway, 704);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      // Protruding Alien Plasma Crystal Cluster
-      ctx.fillStyle = '#1E1B4B';
-      ctx.strokeStyle = '#F43F5E';
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(px - 22, 920);
-      ctx.lineTo(px - 42, 868);
-      ctx.lineTo(px - 18, 882);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      drawWallBrazier(ctx, px, 845, '#F43F5E', '#38BDF8', time + px);
+      // Fallback column before image decode
+      if (art.stonePattern) {
+        ctx.fillStyle = art.stonePattern;
+        ctx.fillRect(px - 24, 578, 48, 382);
+      }
+      const pGrad = ctx.createLinearGradient(px - 24, 0, px + 24, 0);
+      pGrad.addColorStop(0, 'rgba(10, 13, 24, 0.78)');
+      pGrad.addColorStop(0.5, 'rgba(26, 32, 48, 0.42)');
+      pGrad.addColorStop(1, 'rgba(8, 10, 18, 0.85)');
+      ctx.fillStyle = pGrad;
+      ctx.fillRect(px - 24, 578, 48, 382);
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2.6;
+      ctx.strokeRect(px - 24, 578, 48, 382);
+      drawWallBrazier(
+        ctx,
+        px,
+        845,
+        isSanctum ? '#F59E0B' : '#F43F5E',
+        isSanctum ? '#FEF08A' : '#38BDF8',
+        time + px
+      );
     }
   }
 
-  // 2. Grand Shattered Rose Window & Crashed Alien Obelisk at World Center (x = 2700)
+  // 2. Center Cathedral Focus (when painted Crypt vista is loaded, let its hand-painted Rose Window
+  //    & Crashed Obelisk shine unobstructed with only a subtle animated arcane shimmer!)
   const cx = WORLD_W / 2;
   if (cx > camX - 420 && cx < camX + viewW + 420) {
-    // Vaulted Gothic Stone Arch framing the Rose Window
-    ctx.fillStyle = '#121625';
-    ctx.strokeStyle = '#2A334E';
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(cx, 540, 260, Math.PI, 0);
-    ctx.lineTo(cx + 260, 575);
-    ctx.lineTo(cx - 260, 575);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Glowing Stained-Glass Rose Mandala Petals
-    ctx.save();
-    ctx.translate(cx, 520);
-    const petalColors = [
-      'rgba(245, 158, 11, 0.18)',
-      'rgba(56, 189, 248, 0.18)',
-      'rgba(16, 185, 129, 0.18)',
-      'rgba(244, 63, 94, 0.16)',
-    ];
-    for (let i = 0; i < 12; i++) {
-      const a0 = (i * Math.PI * 2) / 12;
-      const a1 = ((i + 1) * Math.PI * 2) / 12;
-      ctx.fillStyle = petalColors[i % petalColors.length];
+    if (art.bgCrypt) {
+      ctx.save();
+      ctx.translate(cx, 510);
+      ctx.rotate(time * 0.08);
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.14)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.arc(0, 0, 155, a0, a1);
+      ctx.arc(0, 0, 148, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 102, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      // Procedural Rose Window fallback before painted backdrop finishes decoding
+      ctx.fillStyle = '#121625';
+      ctx.strokeStyle = '#2A334E';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(cx, 540, 260, Math.PI, 0);
+      ctx.lineTo(cx + 260, 575);
+      ctx.lineTo(cx - 260, 575);
       ctx.closePath();
       ctx.fill();
-    }
-
-    // Slowly Rotating Golden-Cyan Astrolabe Ring
-    ctx.rotate(time * 0.1);
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.32)';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 155, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, 108, 0, Math.PI * 2);
-    ctx.stroke();
-    for (let i = 0; i < 8; i++) {
-      const a = (i * Math.PI) / 4;
-      ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * 34, Math.sin(a) * 34);
-      ctx.lineTo(Math.cos(a) * 155, Math.sin(a) * 155);
       ctx.stroke();
     }
-    ctx.restore();
-
-    // Crashed Alien Monolith Obelisk pierced diagonally through the Cathedral Center!
-    ctx.save();
-    ctx.translate(cx + 150, 480);
-    ctx.rotate(0.28);
-    ctx.fillStyle = '#0C1222';
-    ctx.strokeStyle = '#38BDF8';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-26, -190);
-    ctx.lineTo(0, -245);
-    ctx.lineTo(26, -190);
-    ctx.lineTo(34, 95);
-    ctx.lineTo(-34, 95);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Pulsing alien monolith glyph core
-    const monoGlow = 0.4 + 0.4 * Math.sin(time * 3);
-    ctx.fillStyle = `rgba(56, 189, 248, ${monoGlow.toFixed(2)})`;
-    ctx.fillRect(-5, -170, 10, 210);
-    ctx.restore();
   }
 
   // 3. Sunken Primordial Crypt Pit (x = 2260..3140, y = 960..1120)
   if (3140 > camX - 80 && 2260 < camX + viewW + 80) {
-    // Dark Catacomb Stone Backwall
-    ctx.fillStyle = '#0A1415';
-    ctx.fillRect(2260, 960, 880, 115);
+    // Textured Catacomb Stone Backwall
+    if (art.stonePattern) {
+      ctx.fillStyle = art.stonePattern;
+      ctx.fillRect(2260, 960, 880, 115);
+      ctx.fillStyle = 'rgba(6, 22, 22, 0.72)';
+      ctx.fillRect(2260, 960, 880, 115);
+    } else {
+      ctx.fillStyle = '#0A1415';
+      ctx.fillRect(2260, 960, 880, 115);
+    }
 
     // Carved Crypt Arch Alcoves with Faint Skull Silhouettes
     for (let ax = 2365; ax <= 3025; ax += 110) {
-      ctx.fillStyle = '#060C0E';
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+      ctx.fillStyle = 'rgba(4, 10, 12, 0.85)';
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.28)';
       ctx.lineWidth = 1.6;
       ctx.beginPath();
       ctx.arc(ax, 1012, 22, Math.PI, 0);
@@ -736,10 +803,27 @@ function drawCathedralArchitecture(
     }
   }
 
-  // Left & Right Citadel Boundary Walls
-  ctx.fillStyle = '#0C101C';
-  ctx.fillRect(0, 0, 22, WORLD_H);
-  ctx.fillRect(WORLD_W - 22, 0, 22, WORLD_H);
+  // Left & Right Citadel Boundary Walls (Ashlar Stone Masonry)
+  if (art.stonePattern) {
+    ctx.fillStyle = art.stonePattern;
+    ctx.fillRect(0, 0, 24, WORLD_H);
+    ctx.fillRect(WORLD_W - 24, 0, 24, WORLD_H);
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.55)';
+    ctx.fillRect(0, 0, 24, WORLD_H);
+    ctx.fillRect(WORLD_W - 24, 0, 24, WORLD_H);
+  } else {
+    ctx.fillStyle = '#0C101C';
+    ctx.fillRect(0, 0, 24, WORLD_H);
+    ctx.fillRect(WORLD_W - 24, 0, 24, WORLD_H);
+  }
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(24, 0);
+  ctx.lineTo(24, WORLD_H);
+  ctx.moveTo(WORLD_W - 24, 0);
+  ctx.lineTo(WORLD_W - 24, WORLD_H);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -791,35 +875,58 @@ function drawWallBrazier(
 function drawBaseZone(
   ctx: CanvasRenderingContext2D,
   zone: { team: 'blue' | 'red'; x: number; y: number; w: number; h: number },
-  time: number
+  time: number,
+  art: ArenaArtAssets
 ): void {
   const isBlue = zone.team === 'blue';
   const primary = isBlue ? '#38BDF8' : '#F43F5E';
   const accent = isBlue ? '#F59E0B' : '#38BDF8';
-  const bg = isBlue ? 'rgba(56, 189, 248, 0.08)' : 'rgba(244, 63, 94, 0.08)';
+  const bg = isBlue ? 'rgba(56, 189, 248, 0.07)' : 'rgba(244, 63, 94, 0.07)';
   ctx.save();
 
   ctx.fillStyle = bg;
   ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
 
   const cx = zone.x + zone.w * 0.5;
-  const cy = zone.y + 115;
+  const floorY = zone.y + zone.h;
 
-  // Gothic Cathedral Altar Arch (Blue) or Alien Warp-Gate Frame (Red)
-  ctx.strokeStyle = accent;
-  ctx.globalAlpha = 0.35;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  if (isBlue) {
-    ctx.arc(cx, cy + 20, 74, Math.PI, 0);
+  if (art.healingAltar) {
+    const drawH = 252;
+    const drawW = drawH * art.healingAltar.aspect;
+
+    // Live emerald-gold restoration glow pulsing from the altar chalice
+    const glowPulse = 0.72 + 0.28 * Math.sin(time * 3.2);
+    const chaliceGlow = ctx.createRadialGradient(
+      cx,
+      floorY - drawH * 0.42,
+      10,
+      cx,
+      floorY - drawH * 0.42,
+      96 * glowPulse
+    );
+    chaliceGlow.addColorStop(0, 'rgba(52, 211, 153, 0.36)');
+    chaliceGlow.addColorStop(0.55, isBlue ? 'rgba(56, 189, 248, 0.14)' : 'rgba(244, 63, 94, 0.14)');
+    chaliceGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = chaliceGlow;
+    ctx.beginPath();
+    ctx.arc(cx, floorY - drawH * 0.42, 96 * glowPulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.drawImage(art.healingAltar.canvas, cx - drawW / 2, floorY - drawH + 4, drawW, drawH);
   } else {
-    ctx.moveTo(cx - 72, zone.y + zone.h - 14);
-    ctx.lineTo(cx - 54, cy - 35);
-    ctx.lineTo(cx, cy - 66);
-    ctx.lineTo(cx + 54, cy - 35);
-    ctx.lineTo(cx + 72, zone.y + zone.h - 14);
+    const cy = zone.y + 115;
+    ctx.strokeStyle = accent;
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy + 20, 74, Math.PI, 0);
+    ctx.stroke();
+    ctx.globalAlpha = 0.85;
+    const bob = Math.sin(time * 3) * 4;
+    ctx.fillStyle = '#10B981';
+    ctx.fillRect(cx - 18, cy - 5 + bob, 36, 10);
+    ctx.fillRect(cx - 5, cy - 18 + bob, 10, 36);
   }
-  ctx.stroke();
 
   // Sanctified barrier energy gate
   const gateX = isBlue ? zone.x + zone.w : zone.x;
@@ -832,32 +939,23 @@ function drawBaseZone(
   ctx.lineTo(gateX, zone.y + zone.h);
   ctx.stroke();
 
-  // Floating Restoration Cross Sigil
-  ctx.globalAlpha = 0.85;
-  const bob = Math.sin(time * 3) * 4;
-  ctx.fillStyle = '#10B981';
-  ctx.fillRect(cx - 18, cy - 5 + bob, 36, 10);
-  ctx.fillRect(cx - 5, cy - 18 + bob, 10, 36);
-
-  ctx.globalAlpha = 0.92;
+  ctx.globalAlpha = 0.94;
   ctx.font = '700 12px "Bricolage Grotesque", sans-serif';
   ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = INK;
+  const label = isBlue ? 'SANCTUM HEALING ALTAR' : 'INVASION WARP ALTAR';
+  ctx.strokeText(label, cx, zone.y + 20);
   ctx.fillStyle = primary;
-  ctx.fillText(isBlue ? 'SANCTUM HEALING ALTAR' : 'INVASION WARP ALTAR', cx, zone.y + 26);
-
-  // Altar stone dais
-  ctx.fillStyle = '#1E2438';
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 2;
-  ctx.fillRect(cx - 64, zone.y + zone.h - 14, 128, 14);
-  ctx.strokeRect(cx - 64, zone.y + zone.h - 14, 128, 14);
+  ctx.fillText(label, cx, zone.y + 20);
   ctx.restore();
 }
 
 function drawPlatform(
   ctx: CanvasRenderingContext2D,
   p: { x: number; y: number; w: number; h: number; oneWay: boolean; style: string },
-  time: number
+  time: number,
+  art: ArenaArtAssets
 ): void {
   ctx.save();
   const centerX = p.x + p.w * 0.5;
@@ -865,128 +963,182 @@ function drawPlatform(
   const isInvasionSide = centerX > WORLD_W / 2 + 450;
 
   if (p.oneWay) {
-    // Luminous Gothic-Alien Sanctuary Hard-Light Glass (drop-through signal)
-    const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
-    if (isCryptArea) {
-      grad.addColorStop(0, 'rgba(52, 211, 153, 0.72)');
-      grad.addColorStop(0.55, 'rgba(56, 189, 248, 0.36)');
-      grad.addColorStop(1, 'rgba(10, 20, 28, 0.65)');
-    } else if (isInvasionSide) {
-      grad.addColorStop(0, 'rgba(244, 63, 94, 0.65)');
-      grad.addColorStop(0.55, 'rgba(56, 189, 248, 0.34)');
-      grad.addColorStop(1, 'rgba(15, 23, 42, 0.68)');
-    } else {
-      grad.addColorStop(0, 'rgba(56, 189, 248, 0.72)');
-      grad.addColorStop(0.55, 'rgba(245, 158, 11, 0.36)');
-      grad.addColorStop(1, 'rgba(15, 23, 42, 0.65)');
-    }
-    ctx.fillStyle = grad;
-    ctx.fillRect(p.x, p.y, p.w, p.h);
+    if (art.platformGlassBridge) {
+      // Hand-Inked Ornate Wrought-Iron & Glowing Stained-Glass Catwalk Bridge
+      const sprite = art.platformGlassBridge;
+      const bridgeH = p.h >= 16 ? 56 : 46;
+      const topY = p.y - bridgeH * 0.34; // Align flat walkable iron deck rail exactly with p.y
 
-    // Gothic mullion support struts
-    ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
-    ctx.lineWidth = 1.6;
-    for (let x = p.x + 48; x < p.x + p.w - 24; x += 72) {
-      ctx.beginPath();
-      ctx.moveTo(x, p.y);
-      ctx.lineTo(x, p.y + p.h);
-      ctx.stroke();
-    }
-
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2.4;
-    ctx.strokeRect(p.x, p.y, p.w, p.h);
-
-    // Bright top walkable highlight
-    ctx.fillStyle = isCryptArea ? '#A7F3D0' : '#FDE68A';
-    ctx.fillRect(p.x + 2, p.y + 1, p.w - 4, 2.5);
-
-    // Subtle animated drop-through chevron hints
-    const chevAlpha = 0.4 + 0.25 * Math.sin(time * 3.5);
-    ctx.strokeStyle = `rgba(224, 242, 254, ${chevAlpha.toFixed(2)})`;
-    ctx.lineWidth = 1.5;
-    for (let x = p.x + 36; x < p.x + p.w - 24; x += 72) {
-      ctx.beginPath();
-      ctx.moveTo(x - 5, p.y + 6);
-      ctx.lineTo(x, p.y + 11.5);
-      ctx.lineTo(x + 5, p.y + 6);
-      ctx.stroke();
-    }
-  } else {
-    // Weathered Gothic Cathedral Ashlar Stone & Alien Conduit Inlay
-    const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + Math.min(p.h, 96));
-    if (isCryptArea) {
-      grad.addColorStop(0, '#273A38');
-      grad.addColorStop(0.28, '#1A2727');
-      grad.addColorStop(1, '#0C1416');
-    } else if (isInvasionSide) {
-      grad.addColorStop(0, '#3B2F44');
-      grad.addColorStop(0.26, '#261F31');
-      grad.addColorStop(1, '#120F1B');
-    } else {
-      grad.addColorStop(0, '#3C445C');
-      grad.addColorStop(0.26, '#262C3F');
-      grad.addColorStop(1, '#121622');
-    }
-    ctx.fillStyle = grad;
-    ctx.fillRect(p.x, p.y, p.w, p.h);
-
-    // Top carved stone cornice ledge
-    ctx.fillStyle = isCryptArea ? '#3A5A53' : isInvasionSide ? '#524361' : '#535D7A';
-    ctx.fillRect(p.x, p.y, p.w, 8);
-
-    // Subtle top specular edge so walkable terrain pops sharply
-    ctx.fillStyle = isCryptArea
-      ? 'rgba(110, 231, 183, 0.35)'
-      : isInvasionSide
-        ? 'rgba(251, 113, 133, 0.32)'
-        : 'rgba(253, 230, 138, 0.32)';
-    ctx.fillRect(p.x, p.y, p.w, 2);
-
-    // Ashlar masonry stone seams (staggered courses)
-    ctx.strokeStyle = 'rgba(7, 9, 15, 0.5)';
-    ctx.lineWidth = 1.6;
-    for (let x = p.x + 52; x < p.x + p.w - 18; x += 68) {
-      ctx.beginPath();
-      ctx.moveTo(x, p.y + 8);
-      ctx.lineTo(x, p.y + Math.min(p.h, 30));
-      ctx.stroke();
-    }
-    if (p.h > 40) {
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y + 30);
-      ctx.lineTo(p.x + p.w, p.y + 30);
-      ctx.stroke();
-      for (let x = p.x + 22; x < p.x + p.w - 18; x += 68) {
+      if (p.w <= 250) {
+        ctx.drawImage(sprite.canvas, p.x - 4, topY, p.w + 8, bridgeH);
+      } else {
+        // Seamlessly tile the central ornate iron/stained-glass span across wide bridges
+        const trimX = Math.round(sprite.width * 0.065);
+        const midSrcW = sprite.width - trimX * 2;
+        const tileW = Math.max(120, Math.round(bridgeH * (midSrcW / sprite.height)));
+        ctx.save();
         ctx.beginPath();
-        ctx.moveTo(x, p.y + 30);
-        ctx.lineTo(x, p.y + Math.min(p.h, 58));
+        ctx.rect(p.x - 3, topY - 4, p.w + 6, bridgeH + 8);
+        ctx.clip();
+        for (let tx = p.x - 3; tx < p.x + p.w + 3; tx += tileW) {
+          ctx.drawImage(
+            sprite.canvas,
+            trimX,
+            0,
+            midSrcW,
+            sprite.height,
+            tx,
+            topY,
+            tileW + 1,
+            bridgeH
+          );
+        }
+        ctx.restore();
+      }
+
+      // Crisp luminous walkable line + subtle drop-through chevron hints
+      ctx.fillStyle = isCryptArea
+        ? 'rgba(110, 231, 183, 0.72)'
+        : isInvasionSide
+          ? 'rgba(251, 113, 133, 0.65)'
+          : 'rgba(253, 230, 138, 0.72)';
+      ctx.fillRect(p.x + 2, p.y, p.w - 4, 2.2);
+
+      const chevAlpha = 0.42 + 0.26 * Math.sin(time * 3.5);
+      ctx.strokeStyle = isCryptArea
+        ? `rgba(110, 231, 183, ${chevAlpha.toFixed(2)})`
+        : isInvasionSide
+          ? `rgba(251, 113, 133, ${chevAlpha.toFixed(2)})`
+          : `rgba(186, 230, 253, ${chevAlpha.toFixed(2)})`;
+      ctx.lineWidth = 1.6;
+      for (let x = p.x + 42; x < p.x + p.w - 28; x += 84) {
+        ctx.beginPath();
+        ctx.moveTo(x - 4.5, p.y + 6);
+        ctx.lineTo(x, p.y + 11);
+        ctx.lineTo(x + 4.5, p.y + 6);
         ctx.stroke();
       }
+    } else {
+      // Fallback translucent glass strip before image decode
+      const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + p.h);
+      grad.addColorStop(0, isCryptArea ? 'rgba(52, 211, 153, 0.78)' : 'rgba(56, 189, 248, 0.76)');
+      grad.addColorStop(1, 'rgba(12, 18, 34, 0.72)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2.8;
+      ctx.strokeRect(p.x, p.y, p.w, p.h);
     }
+  } else {
+    // Solid Stone Floor or Top-Nave Carved Battlement Bridge
+    const isBattlement = p.style === 'battlement';
 
-    // Glowing Alien-Gold / Crypt / Crimson Circuit Vein
-    ctx.fillStyle = isCryptArea
-      ? 'rgba(16, 185, 129, 0.48)'
-      : isInvasionSide
-        ? 'rgba(244, 63, 94, 0.45)'
-        : 'rgba(245, 158, 11, 0.42)';
-    ctx.fillRect(p.x + 10, p.y + 10, p.w - 20, 2.2);
-
-    // Decorative crenellation dentils underneath top nave battlements
-    if (p.style === 'battlement') {
-      ctx.fillStyle = isInvasionSide ? '#20192A' : '#1E2436';
-      for (let x = p.x + 14; x < p.x + p.w - 26; x += 44) {
-        ctx.fillRect(x, p.y + p.h, 20, 7);
-        ctx.strokeStyle = INK;
-        ctx.lineWidth = 1.6;
-        ctx.strokeRect(x, p.y + p.h, 20, 7);
+    if (isBattlement && art.platformStoneLedge) {
+      // Elevated Top Nave: full sculpted Gothic flagstone deck + hanging carved stone corbel arches!
+      const sprite = art.platformStoneLedge;
+      const drawH = 60;
+      const tileW = Math.max(140, Math.round(drawH * sprite.aspect));
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(p.x, p.y - 5, p.w, drawH + 8);
+      ctx.clip();
+      for (let tx = p.x; tx < p.x + p.w; tx += tileW) {
+        ctx.drawImage(sprite.canvas, tx, p.y - 4, tileW + 1, drawH);
       }
-    }
+      // Subtle biome color glaze so Sanctum & Invasion wings stay atmospherically unified
+      ctx.fillStyle = isCryptArea
+        ? 'rgba(16, 185, 129, 0.08)'
+        : isInvasionSide
+          ? 'rgba(244, 63, 94, 0.09)'
+          : 'rgba(56, 189, 248, 0.06)';
+      ctx.fillRect(p.x, p.y - 4, p.w, 30);
+      ctx.restore();
 
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 3;
-    ctx.strokeRect(p.x, p.y, p.w, p.h);
+      // Crisp walkable highlight line & inked stone end caps
+      ctx.fillStyle = isCryptArea
+        ? 'rgba(110, 231, 183, 0.65)'
+        : isInvasionSide
+          ? 'rgba(251, 113, 133, 0.58)'
+          : 'rgba(253, 230, 138, 0.62)';
+      ctx.fillRect(p.x + 1, p.y, p.w - 2, 2.2);
+
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y - 3);
+      ctx.lineTo(p.x, p.y + p.h + 12);
+      ctx.moveTo(p.x + p.w, p.y - 3);
+      ctx.lineTo(p.x + p.w, p.y + p.h + 12);
+      ctx.stroke();
+    } else {
+      // Deep Ground Floors: Tiled Carved Ashlar Substructure + Sculpted Flagstone-and-Gold Top Deck
+      if (art.stonePattern) {
+        ctx.save();
+        ctx.fillStyle = art.stonePattern;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        const glaze = ctx.createLinearGradient(p.x, p.y, p.x, p.y + Math.min(p.h, 130));
+        if (isCryptArea) {
+          glaze.addColorStop(0, 'rgba(16, 62, 54, 0.34)');
+          glaze.addColorStop(0.45, 'rgba(10, 30, 32, 0.46)');
+          glaze.addColorStop(1, 'rgba(5, 11, 14, 0.85)');
+        } else if (isInvasionSide) {
+          glaze.addColorStop(0, 'rgba(68, 22, 44, 0.34)');
+          glaze.addColorStop(0.45, 'rgba(28, 14, 34, 0.48)');
+          glaze.addColorStop(1, 'rgba(10, 7, 16, 0.86)');
+        } else {
+          glaze.addColorStop(0, 'rgba(34, 44, 68, 0.28)');
+          glaze.addColorStop(0.45, 'rgba(16, 22, 38, 0.46)');
+          glaze.addColorStop(1, 'rgba(8, 11, 20, 0.86)');
+        }
+        ctx.fillStyle = glaze;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.restore();
+      } else {
+        const grad = ctx.createLinearGradient(p.x, p.y, p.x, p.y + Math.min(p.h, 96));
+        grad.addColorStop(0, isCryptArea ? '#273A38' : isInvasionSide ? '#3B2F44' : '#3C445C');
+        grad.addColorStop(1, '#121622');
+        ctx.fillStyle = grad;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      }
+
+      // Sculpted beveled flagstone & antique gold filigree top cornice strip
+      if (art.platformStoneLedge) {
+        const sprite = art.platformStoneLedge;
+        const capSrcH = Math.round(sprite.height * 0.54);
+        const capDrawH = 34;
+        const tileW = Math.max(120, Math.round(capDrawH * (sprite.width / capSrcH)));
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(p.x, p.y - 4, p.w, capDrawH + 4);
+        ctx.clip();
+        for (let tx = p.x; tx < p.x + p.w; tx += tileW) {
+          ctx.drawImage(
+            sprite.canvas,
+            0,
+            0,
+            sprite.width,
+            capSrcH,
+            tx,
+            p.y - 4,
+            tileW + 1,
+            capDrawH
+          );
+        }
+        ctx.restore();
+      }
+
+      // Crisp walkable top rim light so feet contact line reads instantly
+      ctx.fillStyle = isCryptArea
+        ? 'rgba(110, 231, 183, 0.65)'
+        : isInvasionSide
+          ? 'rgba(251, 113, 133, 0.55)'
+          : 'rgba(253, 230, 138, 0.62)';
+      ctx.fillRect(p.x, p.y, p.w, 2.4);
+
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 3.2;
+      ctx.strokeRect(p.x, p.y, p.w, p.h);
+    }
   }
   ctx.restore();
 }
@@ -994,25 +1146,35 @@ function drawPlatform(
 function drawJumpPad(
   ctx: CanvasRenderingContext2D,
   jp: { x: number; y: number; w: number; color: string },
-  time: number
+  time: number,
+  playerHero?: HeroEntity,
+  sprite?: ProcessedSprite | null
 ): void {
+  const playerOver =
+    Boolean(playerHero && playerHero.alive && !playerHero.inDropPod) &&
+    playerHero!.x + playerHero!.w * 0.45 > jp.x &&
+    playerHero!.x - playerHero!.w * 0.45 < jp.x + jp.w &&
+    playerHero!.y + playerHero!.h / 2 >= jp.y - 16 &&
+    playerHero!.y + playerHero!.h / 2 <= jp.y + 28;
+
   ctx.save();
   const cx = jp.x + jp.w / 2;
 
-  // Vertical soft gravity well beam
-  const bGrad = ctx.createLinearGradient(0, jp.y, 0, jp.y - 68);
-  bGrad.addColorStop(0, `${jp.color}38`);
+  // Vertical soft gravity well beam (intensifies when player stands ready on pad)
+  const beamH = playerOver ? 88 : 64;
+  const bGrad = ctx.createLinearGradient(0, jp.y, 0, jp.y - beamH);
+  bGrad.addColorStop(0, playerOver ? `${jp.color}78` : `${jp.color}36`);
   bGrad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = bGrad;
-  ctx.fillRect(jp.x + 8, jp.y - 68, jp.w - 16, 68);
+  ctx.fillRect(jp.x + 8, jp.y - beamH, jp.w - 16, beamH);
 
   // Rising runic gravity chevrons
   for (let i = 0; i < 3; i++) {
-    const phase = (time * 2.5 + i * 0.33) % 1;
-    const cy = jp.y - 8 - phase * 54;
-    ctx.strokeStyle = jp.color;
-    ctx.globalAlpha = (1 - phase) * 0.9;
-    ctx.lineWidth = 3;
+    const phase = (time * (playerOver ? 3.2 : 2.1) + i * 0.33) % 1;
+    const cy = jp.y - 10 - phase * (playerOver ? 68 : 52);
+    ctx.strokeStyle = playerOver ? '#FDE047' : jp.color;
+    ctx.globalAlpha = (1 - phase) * (playerOver ? 1 : 0.78);
+    ctx.lineWidth = playerOver ? 3.4 : 2.6;
     ctx.beginPath();
     ctx.moveTo(cx - 17, cy + 7);
     ctx.lineTo(cx, cy - 3);
@@ -1020,110 +1182,139 @@ function drawJumpPad(
     ctx.stroke();
   }
 
-  // Carved stone-and-alloy gravity pad base
   ctx.globalAlpha = 1;
-  ctx.fillStyle = '#1B2234';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.roundRect(jp.x, jp.y, jp.w, 16, [6, 6, 0, 0]);
-  ctx.fill();
-  ctx.stroke();
+  if (sprite) {
+    // Hand-inked carved stone & brass winged runic jump pad dais
+    const drawW = jp.w + 34;
+    const drawH = drawW / sprite.aspect;
+    const bottomY = jp.y + 18;
+    ctx.drawImage(sprite.canvas, cx - drawW / 2, bottomY - drawH, drawW, drawH);
 
-  ctx.fillStyle = '#F59E0B';
-  ctx.fillRect(jp.x + 3, jp.y + 10, jp.w - 6, 3);
-  ctx.fillStyle = jp.color;
-  ctx.fillRect(jp.x + 8, jp.y + 2, jp.w - 16, 5);
+    // Live pulsing faction/biome rune core shimmer on top of the dais
+    const coreGlow = ctx.createRadialGradient(cx, jp.y + 2, 2, cx, jp.y + 2, 22);
+    coreGlow.addColorStop(0, playerOver ? '#FEF08A' : jp.color);
+    coreGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = playerOver ? 0.9 : 0.55 + 0.25 * Math.sin(time * 5);
+    ctx.fillStyle = coreGlow;
+    ctx.beginPath();
+    ctx.arc(cx, jp.y + 2, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#1B2234';
+    ctx.strokeStyle = playerOver ? '#FDE047' : INK;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.roundRect(jp.x, jp.y, jp.w, 16, [6, 6, 0, 0]);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = playerOver ? '#FDE047' : jp.color;
+    ctx.fillRect(jp.x + 8, jp.y + 2, jp.w - 16, 5);
+  }
+
+  if (playerOver) {
+    ctx.font = '700 10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(7, 9, 16, 0.92)';
+    ctx.beginPath();
+    ctx.roundRect(cx - 34, jp.y - 36, 68, 17, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = '#FDE047';
+    ctx.fillText('JUMP [W]', cx, jp.y - 24);
+  }
   ctx.restore();
 }
 
-function drawRelicShard(ctx: CanvasRenderingContext2D, sc: SolarCubeEntity, time: number): void {
+function drawRelicShard(
+  ctx: CanvasRenderingContext2D,
+  sc: SolarCubeEntity,
+  time: number,
+  sprite?: ProcessedSprite | null
+): void {
   const bob = Math.sin(time * 3.4 + sc.bobPhase) * 5;
   const x = sc.x;
   const y = sc.y + bob;
   const r = sc.value >= 16 ? 12 : 9.5;
 
   ctx.save();
-  ctx.fillStyle = 'rgba(245, 158, 11, 0.25)';
+  const aura = ctx.createRadialGradient(x, y, 3, x, y, r + 14);
+  aura.addColorStop(0, 'rgba(251, 191, 36, 0.42)');
+  aura.addColorStop(1, 'rgba(245, 158, 11, 0)');
+  ctx.fillStyle = aura;
   ctx.beginPath();
-  ctx.arc(x, y, r + 6.5, 0, Math.PI * 2);
+  ctx.arc(x, y, r + 14, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.translate(x, y);
-  ctx.rotate(Math.sin(time * 2 + sc.bobPhase) * 0.14);
-  ctx.fillStyle = '#F59E0B';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(0, -r);
-  ctx.lineTo(r * 0.85, 0);
-  ctx.lineTo(0, r);
-  ctx.lineTo(-r * 0.85, 0);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  ctx.rotate(Math.sin(time * 2.2 + sc.bobPhase) * 0.14);
 
-  ctx.fillStyle = '#FEF3C7';
-  ctx.beginPath();
-  ctx.moveTo(0, -r * 0.62);
-  ctx.lineTo(r * 0.36, -r * 0.08);
-  ctx.lineTo(0, r * 0.24);
-  ctx.lineTo(-r * 0.36, -r * 0.08);
-  ctx.closePath();
-  ctx.fill();
+  if (sprite) {
+    const drawH = sc.value >= 16 ? 38 : 30;
+    const drawW = drawH * sprite.aspect;
+    ctx.drawImage(sprite.canvas, -drawW / 2, -drawH / 2, drawW, drawH);
+  } else {
+    ctx.fillStyle = '#F59E0B';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.85, 0);
+    ctx.lineTo(0, r);
+    ctx.lineTo(-r * 0.85, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
-function drawCryptSpirit(ctx: CanvasRenderingContext2D, c: NeutralCreepEntity, time: number): void {
-  const bob = Math.sin(time * 4 + c.bobPhase) * 4;
+function drawCryptSpirit(
+  ctx: CanvasRenderingContext2D,
+  c: NeutralCreepEntity,
+  time: number,
+  sprite: ProcessedSprite | null
+): void {
+  const bob = Math.sin(time * 4 + c.bobPhase) * 4.5;
   ctx.save();
   ctx.translate(c.x, c.y + bob);
 
-  // Orbiting emerald spirit wisps
-  ctx.fillStyle = 'rgba(16, 185, 129, 0.28)';
+  // Soft spectral jade aura
+  const aura = ctx.createRadialGradient(0, 0, 6, 0, 0, 34);
+  aura.addColorStop(0, 'rgba(16, 185, 129, 0.36)');
+  aura.addColorStop(1, 'rgba(16, 185, 129, 0)');
+  ctx.fillStyle = aura;
   ctx.beginPath();
-  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.arc(0, 0, 34, 0, Math.PI * 2);
   ctx.fill();
 
-  // Flowing wisp tail
-  ctx.fillStyle = '#059669';
-  ctx.beginPath();
-  ctx.moveTo(-10, 4);
-  ctx.quadraticCurveTo(Math.sin(time * 6 + c.bobPhase) * 6, 18, 0, 21);
-  ctx.quadraticCurveTo(-Math.sin(time * 6 + c.bobPhase) * 4, 16, 10, 4);
-  ctx.closePath();
-  ctx.fill();
-
-  // Luminous Primordial Spirit Core
-  ctx.fillStyle = c.hitFlashTimer > 0 ? '#FFFFFF' : '#10B981';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.arc(0, -2, 13, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  // Horned mini-spirit ears
-  ctx.fillStyle = '#34D399';
-  ctx.beginPath();
-  ctx.moveTo(-9, -10);
-  ctx.lineTo(-14, -20);
-  ctx.lineTo(-3, -13);
-  ctx.closePath();
-  ctx.moveTo(9, -10);
-  ctx.lineTo(14, -20);
-  ctx.lineTo(3, -13);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Healing cross sigil inside spirit
-  ctx.fillStyle = '#ECFDF5';
-  ctx.fillRect(-5, -4, 10, 4);
-  ctx.fillRect(-2, -7, 4, 10);
+  if (sprite) {
+    const drawH = 62;
+    const drawW = drawH * sprite.aspect;
+    ctx.save();
+    ctx.rotate(Math.sin(time * 3 + c.bobPhase) * 0.06);
+    ctx.drawImage(sprite.canvas, -drawW / 2, -drawH / 2 - 4, drawW, drawH);
+    if (c.hitFlashTimer > 0) {
+      ctx.globalAlpha = 0.72;
+      ctx.drawImage(sprite.flashCanvas, -drawW / 2, -drawH / 2 - 4, drawW, drawH);
+    }
+    ctx.restore();
+  } else {
+    ctx.fillStyle = c.hitFlashTimer > 0 ? '#FFFFFF' : '#10B981';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(0, -2, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
 
   if (c.hp < c.maxHp) {
-    drawCompactBar(ctx, 0, -27, 36, 5, c.hp / c.maxHp, '#34D399');
+    drawCompactBar(ctx, 0, -39, 38, 5, c.hp / c.maxHp, '#34D399');
   }
   ctx.restore();
 }
@@ -1136,12 +1327,12 @@ function drawReliquaryTower(
   ctx: CanvasRenderingContext2D,
   t: TurretEntity,
   time: number,
-  playerHero?: HeroEntity
+  playerHero?: HeroEntity,
+  sprite?: ProcessedSprite | null
 ): void {
   const isBlue = t.team === 'blue';
   const isInner = t.tier === 'inner';
   const teamCol = isBlue ? '#38BDF8' : '#F43F5E';
-  const trimCol = isBlue ? '#F59E0B' : '#FB7185';
 
   ctx.save();
   if (!t.alive) {
@@ -1177,101 +1368,91 @@ function drawReliquaryTower(
     }
   }
 
-  const h = isInner ? 110 : 90;
-  const baseW = isInner ? 40 : 34;
+  const h = isInner ? 168 : 142;
+  const headY = t.y - h * 0.84;
 
-  // Inner Reliquary Winged Buttress Fins
-  if (isInner) {
-    ctx.fillStyle = isBlue ? '#1E293B' : '#2D192B';
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2.6;
+  // Faction ambient energy glow behind stained glass & spire
+  const towerGlow = ctx.createRadialGradient(t.x, t.y - h * 0.5, 10, t.x, t.y - h * 0.5, isInner ? 82 : 68);
+  towerGlow.addColorStop(0, isBlue ? 'rgba(56, 189, 248, 0.34)' : 'rgba(244, 63, 94, 0.36)');
+  towerGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = towerGlow;
+  ctx.beginPath();
+  ctx.arc(t.x, t.y - h * 0.5, isInner ? 82 : 68, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (sprite) {
+    const drawW = h * sprite.aspect;
+    ctx.drawImage(sprite.canvas, t.x - drawW / 2, t.y - h + 4, drawW, h);
+    if (t.hitFlashTimer > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.drawImage(sprite.flashCanvas, t.x - drawW / 2, t.y - h + 4, drawW, h);
+      ctx.restore();
+    }
+
+    // Faction stained-glass radiance overlay + plinth banner strip for instant Blue vs Red clarity
+    const pulse = 0.6 + 0.3 * Math.sin(time * 4.5);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const orbGrad = ctx.createRadialGradient(t.x, headY, 2, t.x, headY, isInner ? 26 : 21);
+    orbGrad.addColorStop(0, '#FFFFFF');
+    orbGrad.addColorStop(0.35, teamCol);
+    orbGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = orbGrad;
     ctx.beginPath();
-    ctx.moveTo(t.x - baseW * 0.72, t.y - h * 0.25);
-    ctx.lineTo(t.x - baseW * 1.28, t.y - h * 0.76);
-    ctx.lineTo(t.x - baseW * 0.65, t.y - h * 0.85);
-    ctx.closePath();
-    ctx.moveTo(t.x + baseW * 0.72, t.y - h * 0.25);
-    ctx.lineTo(t.x + baseW * 1.28, t.y - h * 0.76);
-    ctx.lineTo(t.x + baseW * 0.65, t.y - h * 0.85);
+    ctx.arc(t.x, headY, isInner ? 26 : 21, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Faction base collar bar so ally vs enemy tower is unmistakable
+    ctx.fillStyle = teamCol;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.fillRect(t.x - drawW * 0.34, t.y - 7, drawW * 0.68, 6);
+    ctx.strokeRect(t.x - drawW * 0.34, t.y - 7, drawW * 0.68, 6);
+  } else {
+    const baseW = isInner ? 40 : 34;
+    ctx.fillStyle = t.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#242B40' : '#2D1E30';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(t.x - baseW, t.y);
+    ctx.lineTo(t.x - baseW * 0.72, t.y - h * 0.75);
+    ctx.lineTo(t.x + baseW * 0.72, t.y - h * 0.75);
+    ctx.lineTo(t.x + baseW, t.y);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
   }
 
-  // Stepped Gothic Stone Obelisk Pedestal
-  ctx.fillStyle = t.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#242B40' : '#2D1E30';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(t.x - baseW, t.y);
-  ctx.lineTo(t.x - baseW * 0.72, t.y - h);
-  ctx.lineTo(t.x + baseW * 0.72, t.y - h);
-  ctx.lineTo(t.x + baseW, t.y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Arched Stained-Glass Energy Slit on Tower Body
-  ctx.fillStyle = teamCol;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(t.x, t.y - h * 0.56, 8, Math.PI, 0);
-  ctx.lineTo(t.x + 8, t.y - 20);
-  ctx.lineTo(t.x - 8, t.y - 20);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Gold filigree collar
-  ctx.fillStyle = trimCol;
-  ctx.fillRect(t.x - baseW * 0.78, t.y - h + 4, baseW * 1.56, 6);
-  ctx.strokeRect(t.x - baseW * 0.78, t.y - h + 4, baseW * 1.56, 6);
-
-  // Rotating Reliquary Crystal Cannon Head
-  const headY = t.y - h - 12;
-
   // Inner Tower Orbiting Golden Astrolabe Ring
   if (isInner) {
     ctx.save();
     ctx.strokeStyle = '#F59E0B';
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.ellipse(t.x, headY, 34, 10, Math.sin(time * 1.2) * 0.35, 0, Math.PI * 2);
+    ctx.ellipse(t.x, headY, 38, 11, Math.sin(time * 1.4) * 0.35, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
 
+  // Subtle arcane aiming pointer at the crystal reliquary focus
   ctx.save();
   ctx.translate(t.x, headY);
   ctx.rotate(t.aimAngle);
-  ctx.fillStyle = '#475569';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.6;
-  ctx.fillRect(10, -7.5, 36, 15);
-  ctx.strokeRect(10, -7.5, 36, 15);
-  ctx.fillStyle = trimCol;
-  ctx.fillRect(14, -7.5, 6, 15);
   ctx.fillStyle = teamCol;
-  ctx.fillRect(36, -4.5, 10, 9);
-  ctx.restore();
-
-  // Reliquary Halo Core
-  ctx.fillStyle = t.hitFlashTimer > 0 ? '#FFFFFF' : '#334155';
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 1.8;
   ctx.beginPath();
-  ctx.arc(t.x, headY, isInner ? 24 : 20, 0, Math.PI * 2);
+  ctx.moveTo(28, 0);
+  ctx.lineTo(15, -5.5);
+  ctx.lineTo(18, 0);
+  ctx.lineTo(15, 5.5);
+  ctx.closePath();
   ctx.fill();
   ctx.stroke();
-
-  const glow = 0.7 + 0.3 * Math.sin(time * 5);
-  ctx.fillStyle = teamCol;
-  ctx.globalAlpha = glow;
-  ctx.beginPath();
-  ctx.arc(t.x, headY, isInner ? 11 : 8.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalAlpha = 1;
+  ctx.restore();
 
   // Inner Tower Protective Barrier Dome while Outer Tower stands
   if (t.shielded) {
@@ -1280,20 +1461,20 @@ function drawReliquaryTower(
     ctx.fillStyle = 'rgba(251, 191, 36, 0.1)';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(t.x, t.y - h * 0.52, 66, 0, Math.PI * 2);
+    ctx.arc(t.x, t.y - h * 0.48, 78, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.font = '700 10px "Bricolage Grotesque", sans-serif';
+    ctx.font = '700 10px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FDE68A';
-    ctx.fillText('SHIELDED (DESTROY OUTER)', t.x, t.y - h - 46);
+    ctx.fillText('SHIELDED (DESTROY OUTER)', t.x, t.y - h - 14);
     ctx.restore();
   } else {
     drawCompactBar(
       ctx,
       t.x,
-      t.y - h - 46,
-      78,
+      t.y - h - 14,
+      82,
       8,
       t.hp / t.maxHp,
       teamCol,
@@ -1303,100 +1484,96 @@ function drawReliquaryTower(
   ctx.restore();
 }
 
-function drawAncientCore(ctx: CanvasRenderingContext2D, core: CoreDrillEntity, time: number): void {
+function drawAncientCore(
+  ctx: CanvasRenderingContext2D,
+  core: CoreDrillEntity,
+  time: number,
+  sprite?: ProcessedSprite | null
+): void {
   const isBlue = core.team === 'blue';
   const teamCol = isBlue ? '#38BDF8' : '#F43F5E';
+  const coreH = 228;
+  const heartY = core.y - coreH * 0.53;
 
   ctx.save();
-  // Monumental Cathedral-Alien Sanctum Spire
-  ctx.fillStyle = core.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#192136' : '#261729';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(core.x - 64, core.y);
-  ctx.lineTo(core.x - 50, core.y - 138);
-  ctx.lineTo(core.x, core.y - 178);
-  ctx.lineTo(core.x + 50, core.y - 138);
-  ctx.lineTo(core.x + 64, core.y);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
 
-  // Side flying buttress arches
-  ctx.fillStyle = '#121828';
+  // Monumental ambient sanctum radiance behind the Core
+  const glow = ctx.createRadialGradient(core.x, heartY, 16, core.x, heartY, 130);
+  glow.addColorStop(0, isBlue ? 'rgba(56, 189, 248, 0.35)' : 'rgba(244, 63, 94, 0.36)');
+  glow.addColorStop(0.55, 'rgba(245, 158, 11, 0.14)');
+  glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = glow;
   ctx.beginPath();
-  ctx.moveTo(core.x - 64, core.y);
-  ctx.lineTo(core.x - 86, core.y);
-  ctx.lineTo(core.x - 54, core.y - 96);
-  ctx.closePath();
-  ctx.moveTo(core.x + 64, core.y);
-  ctx.lineTo(core.x + 86, core.y);
-  ctx.lineTo(core.x + 54, core.y - 96);
-  ctx.closePath();
+  ctx.arc(core.x, heartY, 130, 0, Math.PI * 2);
   ctx.fill();
-  ctx.stroke();
 
-  // Dual Counter-Rotating Golden & Cyan Astrolabe Rings
-  const bob = Math.sin(time * 3.2) * 5;
+  if (sprite) {
+    const drawW = coreH * sprite.aspect;
+    ctx.drawImage(sprite.canvas, core.x - drawW / 2, core.y - coreH + 5, drawW, coreH);
+    if (core.hitFlashTimer > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      ctx.drawImage(sprite.flashCanvas, core.x - drawW / 2, core.y - coreH + 5, drawW, coreH);
+      ctx.restore();
+    }
+
+    // Faction banner base trim
+    ctx.fillStyle = teamCol;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.4;
+    ctx.fillRect(core.x - drawW * 0.36, core.y - 10, drawW * 0.72, 8);
+    ctx.strokeRect(core.x - drawW * 0.36, core.y - 10, drawW * 0.72, 8);
+  } else {
+    ctx.fillStyle = core.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#192136' : '#261729';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(core.x - 64, core.y);
+    ctx.lineTo(core.x - 50, core.y - 138);
+    ctx.lineTo(core.x, core.y - 178);
+    ctx.lineTo(core.x + 50, core.y - 138);
+    ctx.lineTo(core.x + 64, core.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Dual Counter-Rotating Golden & Faction Astrolabe Rings pulsing around heart
+  const bob = Math.sin(time * 3.2) * 4;
   ctx.strokeStyle = '#F59E0B';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 2.8;
   ctx.beginPath();
-  ctx.ellipse(core.x, core.y - 88 + bob, 48, 16, time * 0.65, 0, Math.PI * 2);
+  ctx.ellipse(core.x, heartY + bob, 56, 17, time * 0.65, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.strokeStyle = teamCol;
-  ctx.lineWidth = 2.2;
+  ctx.lineWidth = 2.4;
   ctx.beginPath();
-  ctx.ellipse(core.x, core.y - 88 + bob, 44, 15, -time * 0.85, 0, Math.PI * 2);
+  ctx.ellipse(core.x, heartY + bob, 50, 15, -time * 0.85, 0, Math.PI * 2);
   ctx.stroke();
-
-  // Radiant Relic Heart Crystal
-  ctx.fillStyle = '#F59E0B';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.6;
-  ctx.beginPath();
-  ctx.moveTo(core.x, core.y - 142 + bob);
-  ctx.lineTo(core.x + 30, core.y - 88 + bob);
-  ctx.lineTo(core.x, core.y - 34 + bob);
-  ctx.lineTo(core.x - 30, core.y - 88 + bob);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#FEF08A';
-  ctx.beginPath();
-  ctx.moveTo(core.x, core.y - 124 + bob);
-  ctx.lineTo(core.x + 13, core.y - 88 + bob);
-  ctx.lineTo(core.x, core.y - 52 + bob);
-  ctx.lineTo(core.x - 13, core.y - 88 + bob);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = teamCol;
-  ctx.fillRect(core.x - 54, core.y - 22, 108, 11);
 
   if (core.shielded) {
-    const pulse = 0.5 + 0.3 * Math.sin(time * 4);
+    const pulse = 0.55 + 0.3 * Math.sin(time * 4);
     ctx.strokeStyle = teamCol;
     ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.14)' : 'rgba(244, 63, 94, 0.14)';
     ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.arc(core.x, core.y - 88, 98, 0, Math.PI * 2);
+    ctx.arc(core.x, heartY + 12, 114, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = pulse;
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    ctx.font = '700 11px "Bricolage Grotesque", sans-serif';
+    ctx.font = '700 11px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#E2E8F0';
-    ctx.fillText('SHIELDED — DESTROY AN INNER TOWER', core.x, core.y - 196);
+    ctx.fillText('SHIELDED — DESTROY AN INNER TOWER', core.x, core.y - coreH - 14);
   } else {
     drawCompactBar(
       ctx,
       core.x,
-      core.y - 196,
-      132,
+      core.y - coreH - 14,
+      138,
       11,
       core.hp / core.maxHp,
       teamCol,
@@ -1527,186 +1704,158 @@ function drawChainHook(ctx: CanvasRenderingContext2D, hk: HookEntity, _time: num
   ctx.restore();
 }
 
-function drawDroid(ctx: CanvasRenderingContext2D, d: DroidEntity, time: number): void {
+function drawDroid(
+  ctx: CanvasRenderingContext2D,
+  d: DroidEntity,
+  time: number,
+  trooperSprite: ProcessedSprite | null,
+  boneBorgSprite: ProcessedSprite | null
+): void {
   const isBlue = d.team === 'blue';
   const isBoneBorg = d.id.startsWith('borg_');
   const primary = isBoneBorg ? '#2DD4BF' : isBlue ? '#38BDF8' : '#F43F5E';
-  const scale = d.tier >= 5 ? 1.22 : d.tier >= 3 ? 1.08 : 1;
-  const bob = Math.sin(time * 10 + d.walkCycle) * 1.8;
+  const scale = d.tier >= 5 ? 1.24 : d.tier >= 3 ? 1.1 : 1;
+  const isMoving = Math.abs(d.vx) > 8;
+  const stridePhase = d.walkCycle * 1.35;
+  const strideBob = isMoving ? Math.abs(Math.sin(stridePhase)) * 2.4 : 0;
+  const strideRock = isMoving ? Math.sin(stridePhase) * 0.032 : 0;
   const f = d.facing;
 
   ctx.save();
-  ctx.translate(d.x, d.y + bob);
-  ctx.scale(scale, scale);
+  ctx.translate(d.x, d.y);
 
-  if (isBoneBorg) {
-    // Caldris's Chrome-Armored Skeletal Bone-Borg!
-    ctx.fillStyle = '#0F172A';
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2;
-    ctx.fillRect(-7, 7, 5, 11);
-    ctx.fillRect(2, 7, 5, 11);
+  // Team ground ring so Blue vs Red waves read instantaneously
+  ctx.fillStyle = isBoneBorg
+    ? 'rgba(45, 212, 191, 0.28)'
+    : isBlue
+      ? 'rgba(56, 189, 248, 0.34)'
+      : 'rgba(244, 63, 94, 0.36)';
+  ctx.beginPath();
+  ctx.ellipse(0, 17, 17 * scale, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-    // Chrome ribcage torso
-    ctx.fillStyle = d.hitFlashTimer > 0 ? '#FFFFFF' : '#334155';
-    ctx.beginPath();
-    ctx.roundRect(-11, -11, 22, 20, 5);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#2DD4BF';
-    ctx.fillRect(-6, -6, 12, 2.5);
-    ctx.fillRect(-5, -1, 10, 2.5);
-    ctx.fillRect(-4, 4, 8, 2.5);
+  const activeSprite = isBoneBorg ? boneBorgSprite : trooperSprite;
+  if (activeSprite) {
+    const drawH = (isBoneBorg ? 52 : 54) * scale;
+    const drawW = drawH * activeSprite.aspect;
 
-    // Skeletal chrome skull
-    ctx.fillStyle = d.hitFlashTimer > 0 ? '#FFFFFF' : '#E2E8F0';
-    ctx.beginPath();
-    ctx.arc(0, -17, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#2DD4BF';
-    ctx.fillRect(f > 0 ? 1 : -7, -19, 6, 3.5);
+    ctx.save();
+    ctx.translate(0, 18 - strideBob);
+    ctx.scale(f, 1);
+    ctx.rotate(strideRock);
 
-    // Necro-rifle
-    ctx.fillStyle = '#64748B';
-    ctx.fillRect(f > 0 ? 9 : -20, -2, 11, 5);
-    ctx.strokeRect(f > 0 ? 9 : -20, -2, 11, 5);
+    ctx.drawImage(activeSprite.canvas, -drawW / 2, -drawH, drawW, drawH);
+    if (d.hitFlashTimer > 0) {
+      ctx.globalAlpha = 0.72;
+      ctx.drawImage(activeSprite.flashCanvas, -drawW / 2, -drawH, drawW, drawH);
+      ctx.globalAlpha = 1;
+    }
+
+    // Faction shoulder pennant / visor glow indicator for instant team recognition
+    if (!isBoneBorg) {
+      ctx.fillStyle = primary;
+      ctx.beginPath();
+      ctx.arc(drawW * 0.06, -drawH * 0.76, 3.2 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Tier 5+ Radiant Golden Halo Crown above elite cathedral troopers
+    if (!isBoneBorg && d.tier >= 5) {
+      ctx.strokeStyle = '#FBBF24';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.ellipse(0, 14 - drawH - strideBob, 12, 3.8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (d.hp < d.maxHp) {
+      drawCompactBar(ctx, 0, 8 - drawH, 34, 4.5, d.hp / d.maxHp, primary);
+    }
   } else {
-    // Evolving Cathedral / Invasion Lane Troopers (Tier 1..6)
-    const armorCol =
-      d.hitFlashTimer > 0
-        ? '#FFFFFF'
-        : d.tier >= 5
-          ? isBlue
-            ? '#B45309'
-            : '#881337'
-          : isBlue
-            ? '#1E293B'
-            : '#2A1829';
-    const trimCol = d.tier >= 5 ? '#FBBF24' : d.tier >= 3 ? '#CBD5E1' : '#64748B';
-
-    // Armored greave treads / legs
-    ctx.fillStyle = '#0F172A';
+    // Instant fallback before image decode finishes
+    ctx.scale(scale, scale);
+    ctx.fillStyle = d.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#1E293B' : '#2A1829';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(-5, 12, 5.5, 0, Math.PI * 2);
-    ctx.arc(5, 12, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    // Flowing mini faction cape
-    ctx.fillStyle = isBlue ? '#1D4ED8' : '#9F1239';
-    ctx.beginPath();
-    ctx.moveTo(-f * 8, -11);
-    ctx.lineTo(-f * 18, 9);
-    ctx.lineTo(-f * 6, 11);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Gothic armored torso
-    ctx.fillStyle = armorCol;
     ctx.beginPath();
     ctx.roundRect(-13, -15, 26, 25, 6);
     ctx.fill();
     ctx.stroke();
-
-    // Team pauldrons
     ctx.fillStyle = primary;
     ctx.fillRect(-13, -13, 26, 6);
-    ctx.strokeRect(-13, -13, 26, 6);
-
-    // Tier 3+ Knight Crest / Tier 5+ Radiant Halo Crown!
-    if (d.tier >= 5) {
-      ctx.strokeStyle = '#FBBF24';
-      ctx.lineWidth = 2.4;
-      ctx.beginPath();
-      ctx.ellipse(0, -25, 11, 3.5, 0, 0, Math.PI * 2);
-      ctx.stroke();
+    if (d.hp < d.maxHp) {
+      drawCompactBar(ctx, 0, -28, 32, 4, d.hp / d.maxHp, primary);
     }
-    if (d.tier >= 3) {
-      ctx.fillStyle = trimCol;
-      ctx.beginPath();
-      ctx.moveTo(-6, -15);
-      ctx.lineTo(0, -25);
-      ctx.lineTo(6, -15);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    // Glowing Visor Slit
-    ctx.fillStyle = d.tier >= 5 ? '#FEF08A' : primary;
-    ctx.fillRect(f > 0 ? 3 : -10, -7, 7, 4);
-
-    // Halberd Blaster Lance
-    ctx.fillStyle = trimCol;
-    ctx.fillRect(f > 0 ? 11 : -22, -3, 11, 6);
-    ctx.strokeRect(f > 0 ? 11 : -22, -3, 11, 6);
-    ctx.fillStyle = primary;
-    ctx.fillRect(f > 0 ? 19 : -22, -2, 3, 4);
-  }
-
-  if (d.hp < d.maxHp) {
-    drawCompactBar(ctx, 0, -31, 32, 4, d.hp / d.maxHp, primary);
   }
   ctx.restore();
 }
 
-function drawDropPodSequence(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number): void {
+function drawDropPodSequence(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  time: number,
+  art: ArenaArtAssets
+): void {
   for (const s of h.dropPodSolars) {
     if (s.collected) continue;
     ctx.save();
-    ctx.fillStyle = '#F59E0B';
-    ctx.strokeStyle = INK;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y - 9);
-    ctx.lineTo(s.x + 8, s.y);
-    ctx.lineTo(s.x, s.y + 9);
-    ctx.lineTo(s.x - 8, s.y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    if (art.relicShard) {
+      const shH = 28;
+      const shW = shH * art.relicShard.aspect;
+      ctx.drawImage(art.relicShard.canvas, s.x - shW / 2, s.y - shH / 2, shW, shH);
+    } else {
+      ctx.fillStyle = '#F59E0B';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y - 9);
+      ctx.lineTo(s.x + 8, s.y);
+      ctx.lineTo(s.x, s.y + 9);
+      ctx.lineTo(s.x - 8, s.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
   ctx.save();
   ctx.translate(h.dropPodX, h.dropPodY);
-  const flameH = 46 + Math.sin(time * 40) * 10;
-  const fGrad = ctx.createLinearGradient(0, -10, 0, -flameH - 25);
+  const flameH = 54 + Math.sin(time * 40) * 12;
+  const fGrad = ctx.createLinearGradient(0, -18, 0, -flameH - 34);
   fGrad.addColorStop(0, '#FEF08A');
   fGrad.addColorStop(0.5, '#F97316');
   fGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
   ctx.fillStyle = fGrad;
   ctx.beginPath();
-  ctx.moveTo(-20, -12);
-  ctx.lineTo(0, -flameH - 25);
-  ctx.lineTo(20, -12);
+  ctx.moveTo(-22, -20);
+  ctx.lineTo(0, -flameH - 34);
+  ctx.lineTo(22, -20);
   ctx.closePath();
   ctx.fill();
 
-  // Cathedral Reliquary Drop Pod
-  ctx.fillStyle = h.team === 'blue' ? '#1E3A8A' : '#881337';
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-22, -16);
-  ctx.lineTo(22, -16);
-  ctx.lineTo(15, 22);
-  ctx.lineTo(-15, 22);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = '#F59E0B';
-  ctx.fillRect(-16, 12, 32, 6);
-  ctx.fillStyle = '#BAE6FD';
-  ctx.beginPath();
-  ctx.arc(0, -2, 8, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
+  if (art.dropPod) {
+    const podH = 78;
+    const podW = podH * art.dropPod.aspect;
+    ctx.shadowColor = h.team === 'blue' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(244, 63, 94, 0.55)';
+    ctx.shadowBlur = 12;
+    ctx.drawImage(art.dropPod.canvas, -podW / 2, -podH / 2, podW, podH);
+    ctx.shadowBlur = 0;
+  } else {
+    // Fallback Cathedral Reliquary Drop Pod
+    ctx.fillStyle = h.team === 'blue' ? '#1E3A8A' : '#881337';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-22, -16);
+    ctx.lineTo(22, -16);
+    ctx.lineTo(15, 22);
+    ctx.lineTo(-15, 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
 
   if (h.isPlayer) {
     ctx.font = '800 12px "Bricolage Grotesque", sans-serif';
@@ -1714,8 +1863,8 @@ function drawDropPodSequence(ctx: CanvasRenderingContext2D, h: HeroEntity, time:
     ctx.fillStyle = '#FDE68A';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 3;
-    ctx.strokeText('STEER A / D FOR RELIC SHARDS', 0, -56);
-    ctx.fillText('STEER A / D FOR RELIC SHARDS', 0, -56);
+    ctx.strokeText('STEER A / D FOR RELIC SHARDS', 0, -64);
+    ctx.fillText('STEER A / D FOR RELIC SHARDS', 0, -64);
   }
   ctx.restore();
 }
@@ -1724,7 +1873,24 @@ function drawDropPodSequence(ctx: CanvasRenderingContext2D, h: HeroEntity, time:
    CHAMPION RENDERER + 8 HAND-CRAFTED ARTICULATED 2D CHARACTER RIGS
    ========================================================================= */
 
-function drawHero(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number, localTeam: Team): void {
+const HERO_SPRITE_HEIGHT: Record<HeroEntity['heroId'], number> = {
+  marrow: 92,
+  seraph: 94,
+  korak: 90,
+  vorg: 84,
+  bastion: 94,
+  vexia: 84,
+  xylar: 82,
+  caldris: 92,
+};
+
+function drawHero(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  time: number,
+  localTeam: Team,
+  sprite?: ProcessedSprite
+): void {
   const def = HERO_MAP[h.heroId];
   const isBlue = h.team === 'blue';
   const teamCol = isBlue ? '#38BDF8' : '#F43F5E';
@@ -1750,12 +1916,22 @@ function drawHero(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number, lo
     ctx.globalAlpha = 0.45;
   }
 
-  // Team ground contact shadow & faction ring
+  // Team ground contact shadow & local-player gilded focus halo
   ctx.save();
-  ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.28)' : 'rgba(244, 63, 94, 0.3)';
+  ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.34)' : 'rgba(244, 63, 94, 0.36)';
   ctx.beginPath();
-  ctx.ellipse(0, h.h / 2 - 1, h.w * 0.68, 6.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, h.h / 2 - 1, h.w * 0.78, 7.5, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = teamCol;
+  ctx.lineWidth = 1.6;
+  ctx.stroke();
+  if (h.isPlayer) {
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.92)';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.ellipse(0, h.h / 2 - 1, h.w * 0.96, 9.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.restore();
 
   // Marrow-Hook Blight Furnace toxic rot cloud!
@@ -1835,47 +2011,140 @@ function drawHero(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number, lo
     ctx.restore();
   }
 
-  // Squash & stretch + Subtle idle breathing
-  ctx.save();
-  const breathe = h.grounded && Math.abs(h.vx) < 20 ? Math.sin(time * 3.6 + h.x) * 0.025 : 0;
-  ctx.scale(h.squashX - breathe, h.squashY + breathe);
-  const flash = h.hitFlashTimer > 0;
-  const stride = Math.abs(h.vx) > 25 && h.grounded ? Math.sin(h.walkCycle * 12) * 7 : 0;
+  // Hand-Inked Full-Body Champion Sprite (matching Champion Select art style!)
+  const spriteH = HERO_SPRITE_HEIGHT[h.heroId] ?? 86;
+  // Stable per-hero phase seed (never derived from h.x, which would jitter every pixel!)
+  const phaseSeed = (h.id.charCodeAt(h.id.length - 1) || 0) * 1.37;
+  if (sprite) {
+    const drawW = spriteH * sprite.aspect;
+    const moveRatio = Math.min(1, Math.abs(h.vx) / 240);
+    const isFloatingHero = h.heroId === 'korak' || h.heroId === 'caldris';
+    // Natural rhythmic footstep cadence (~2.8 steps/sec at full sprint, zero jackhammer jitter)
+    const stride = h.walkCycle * 1.9;
+    const strideArc = Math.abs(Math.sin(stride));
+    const breathe = h.grounded ? (1 - moveRatio) * Math.sin(time * 2.8 + phaseSeed) * 0.018 : 0;
+    const runBob = h.grounded && !isFloatingHero ? strideArc * 4.6 * moveRatio : 0;
+    const strideRock = h.grounded && !isFloatingHero ? Math.sin(stride) * 0.048 * moveRatio : 0;
+    const strideStretch = h.grounded && !isFloatingHero ? (strideArc - 0.5) * 0.036 * moveRatio : 0;
+    const floatBob = isFloatingHero
+      ? Math.sin(time * 3.2 + phaseSeed) * 4.5 + 4
+      : h.isHovering
+        ? Math.sin(time * 7.5 + phaseSeed) * 3 + 3
+        : 0;
+    const moveTilt = Math.max(-0.1, Math.min(0.1, (h.vx / 3000) * h.facing));
+    const attackKick = h.recoilTimer > 0 ? 0.08 : 0;
+    const attackLunge = h.recoilTimer > 0 ? 4.2 : 0;
 
-  switch (h.heroId) {
-    case 'marrow':
-      drawMarrowBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'seraph':
-      drawSeraphBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'korak':
-      drawKorakBody(ctx, h, flash, teamCol, time);
-      break;
-    case 'vorg':
-      drawVorgBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'bastion':
-      drawBastionBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'vexia':
-      drawVexiaBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'xylar':
-      drawXylarBody(ctx, h, flash, teamCol, stride, time);
-      break;
-    case 'caldris':
-      drawCaldrisBody(ctx, h, flash, teamCol, time);
-      break;
+    // Hover propulsion or cloak ambush subtle ambient effects behind sprite
+    if (h.isHovering || h.heroId === 'caldris') {
+      ctx.save();
+      ctx.fillStyle = h.heroId === 'caldris' ? 'rgba(45, 212, 191, 0.34)' : 'rgba(56, 189, 248, 0.34)';
+      ctx.beginPath();
+      ctx.ellipse(0, h.h / 2 - 2, 22, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    if (h.cloakCritReady) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.8)';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.arc(0, -6, 36 + Math.sin(time * 10) * 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (h.dashTimer > 0) {
+      ctx.save();
+      ctx.strokeStyle = def.accentColor;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(0, -6, 34 + Math.sin(time * 24) * 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.save();
+    // Anchor at boots on ground line so squash, stretch & lean pivot naturally from feet
+    ctx.translate(0, h.h / 2 + 2 - runBob - floatBob);
+    ctx.scale((h.squashX - breathe - strideStretch * 0.5) * h.facing, h.squashY + breathe + strideStretch);
+    ctx.rotate(moveTilt + strideRock + attackKick);
+
+    // Subtle colored drop-shadow rim so enemy vs ally silhouettes pop cleanly against cathedral stonework
+    ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
+    ctx.shadowBlur = h.isPlayer ? 12 : 9;
+    ctx.drawImage(sprite.canvas, -drawW / 2 + attackLunge, -spriteH, drawW, spriteH);
+    ctx.shadowBlur = 0;
+
+    // Crisp white hit-flash or Bastion meltdown pulse
+    const meltdownFlash = h.meltdownTimer > 0 && Math.floor(time * 16) % 2 === 0;
+    if (h.hitFlashTimer > 0 || meltdownFlash) {
+      ctx.globalAlpha = h.hitFlashTimer > 0 ? 0.72 : 0.42;
+      ctx.drawImage(sprite.flashCanvas, -drawW / 2 + attackLunge, -spriteH, drawW, spriteH);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+
+    // Precision 360-degree Aim Direction Pip for the local player
+    if (h.isPlayer) {
+      ctx.save();
+      ctx.translate(0, -8);
+      ctx.rotate(h.aimAngle);
+      ctx.fillStyle = def.accentColor;
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(46, 0);
+      ctx.lineTo(37, -5);
+      ctx.lineTo(39, 0);
+      ctx.lineTo(37, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  } else {
+    // Seamless fallback while sprite decodes
+    ctx.save();
+    const breathe = h.grounded && Math.abs(h.vx) < 20 ? Math.sin(time * 2.8 + phaseSeed) * 0.02 : 0;
+    ctx.scale(h.squashX - breathe, h.squashY + breathe);
+    const flash = h.hitFlashTimer > 0;
+    const stride = Math.abs(h.vx) > 25 && h.grounded ? Math.sin(h.walkCycle * 2.2) * 6 : 0;
+
+    switch (h.heroId) {
+      case 'marrow':
+        drawMarrowBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'seraph':
+        drawSeraphBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'korak':
+        drawKorakBody(ctx, h, flash, teamCol, time);
+        break;
+      case 'vorg':
+        drawVorgBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'bastion':
+        drawBastionBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'vexia':
+        drawVexiaBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'xylar':
+        drawXylarBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'caldris':
+        drawCaldrisBody(ctx, h, flash, teamCol, time);
+        break;
+    }
+    ctx.restore();
   }
-  ctx.restore();
 
   // Active Shield Halo
   if (h.shield > 1) {
     ctx.strokeStyle = '#67E8F9';
     ctx.lineWidth = 2.6;
     ctx.beginPath();
-    ctx.arc(0, -2, Math.max(h.w, h.h) * 0.66, 0, Math.PI * 2);
+    ctx.arc(0, -10, Math.max(h.w, h.h) * 0.78, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -1888,7 +2157,7 @@ function drawHero(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number, lo
       ctx.strokeStyle = INK;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(Math.cos(a) * 18, -h.h / 2 - 14 + Math.sin(a) * 4, 4, 0, Math.PI * 2);
+      ctx.arc(Math.cos(a) * 20, h.h / 2 - spriteH - 12 + Math.sin(a) * 4, 4, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
@@ -1896,7 +2165,7 @@ function drawHero(ctx: CanvasRenderingContext2D, h: HeroEntity, time: number, lo
   }
 
   ctx.globalAlpha = 1;
-  const barY = -h.h / 2 - 26;
+  const barY = sprite ? h.h / 2 - spriteH - 16 : -h.h / 2 - 26;
   drawHeroOverheadHud(ctx, h, barY, teamCol, def.accentColor);
   ctx.restore();
 }

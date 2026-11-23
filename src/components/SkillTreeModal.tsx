@@ -1,13 +1,18 @@
 import { useState } from 'react';
-import { X } from 'lucide-react';
-import { HERO_MAP } from '../game/heroes';
+import { Lock, X } from 'lucide-react';
+import {
+  canForgeTalent,
+  getForgedRowStatus,
+  getTalentForgeCost,
+  HERO_MAP,
+} from '../game/heroes';
 import {
   buildAbilityTooltip,
   buildUpgradeTooltip,
   getRowAbilitySlot,
 } from '../game/tooltips';
 import type { HudSnapshot, SkillRowKey, TalentAspect, UpgradeNode } from '../game/types';
-import { AbilitySvgIcon, SolarCrystalIcon, UpgradeSvgIcon } from './AbilityIcon';
+import { AbilitySvgIcon, RelicCorners, SolarCrystalIcon, UpgradeSvgIcon } from './AbilityIcon';
 import { AbilityTooltipCard, UpgradeTooltipCard } from './TooltipCard';
 
 interface SkillTreeModalProps {
@@ -100,16 +105,25 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
 
   const popoverPos = hoverTarget ? computePopoverStyle(hoverTarget.rect) : null;
 
+  const { forgedRows, totalForged, overclockUnlocked } = getForgedRowStatus(
+    hud.player.upgrades,
+    hud.player.heroId
+  );
+  const nextForgeCost = getTalentForgeCost(hud.player.upgrades, hud.player.heroId);
+
+  const forgedList = heroDef.upgrades.filter((u) => (hud.player.upgrades[u.id] ?? 0) > 0);
+
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-[#04060D]/80 p-4"
+      className="fixed inset-0 z-40 flex items-center justify-center bg-[#04060D]/82 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-[1100px] max-h-[90vh] overflow-y-auto rounded-2xl bg-[#0A0E1A] border border-amber-500/35 shadow-2xl flex flex-col"
+        className="relative relic-panel w-full max-w-[1120px] max-h-[90vh] overflow-y-auto rounded-2xl border border-amber-500/35 shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
         onScroll={() => setHoverTarget(null)}
       >
+        <RelicCorners />
         {/* Obsidian & Gold Header */}
         <div className="flex items-center justify-between gap-4 px-6 py-4 border-b border-slate-800/90 bg-gradient-to-r from-[#0E1322] via-[#0B101D] to-[#0D1626]">
           <div className="flex items-center gap-3.5">
@@ -132,7 +146,8 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                 </span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
-                Hover any ability or talent to inspect live before/after stat gains · Press{' '}
+                Choose <strong className="text-amber-300">1 high-impact Specialization per row</strong> — every pick activates its ★ Capstone immediately · Next Forge:{' '}
+                <span className="font-mono-num text-amber-300 font-semibold">{nextForgeCost} Relic</span> · Press{' '}
                 <span className="font-mono-num text-slate-200">B</span> to close
               </div>
             </div>
@@ -216,6 +231,32 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
               </div>
             </div>
 
+            {/* Active Specializations & Overclock Status */}
+            <div className="pt-3 border-t border-slate-800/90 flex flex-col gap-2 text-xs">
+              <div className="flex items-baseline justify-between">
+                <span className="font-semibold text-amber-300/90">
+                  {overclockUnlocked ? 'Overclock Unlocked' : 'Core Specializations'}
+                </span>
+                <span className="font-mono-num text-[11px] text-emerald-300 font-semibold">
+                  {overclockUnlocked ? `${totalForged} Forged` : `${forgedRows.size}/4 Rows`}
+                </span>
+              </div>
+              {forgedList.length === 0 ? (
+                <div className="text-[11px] text-slate-500 leading-snug">
+                  Pick 1 major talent per row (220 → 340 → 480 → 640 Relic). Forging all 4 rows unlocks late-game Overclock.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {forgedList.map((u) => (
+                    <div key={u.id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                      <span className="text-slate-100 font-medium truncate">★ {u.name}</span>
+                      <span className="text-[10px] text-amber-300/90 shrink-0">{u.archetype}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Aspect Legend */}
             <div className="pt-3 border-t border-slate-800/90 flex flex-col gap-1.5 text-[11px] text-slate-400">
               <div className="font-semibold text-slate-300 mb-0.5">Craft Disciplines</div>
@@ -241,9 +282,11 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
               const abilitySlot = getRowAbilitySlot(row.key);
               const abilityIcon = getRowAbilityIcon(row.key);
 
+              const rowHasChoice = forgedRows.has(row.key);
+
               return (
                 <div key={row.key} className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <div
                       onMouseEnter={(e) => {
                         if (!abilitySlot) return;
@@ -275,17 +318,45 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                       </h3>
                       <span className="text-xs text-slate-500">{row.subtitle}</span>
                     </div>
+
+                    <span
+                      className={`text-[11px] font-mono-num font-semibold ${
+                        overclockUnlocked
+                          ? 'text-sky-300'
+                          : rowHasChoice
+                            ? 'text-emerald-300'
+                            : 'text-amber-300/90'
+                      }`}
+                    >
+                      {overclockUnlocked
+                        ? 'Overclock Open · 800 Relic'
+                        : rowHasChoice
+                          ? 'Specialization Chosen'
+                          : `Choose 1 of 3 · ${nextForgeCost} Relic`}
+                    </span>
                   </div>
 
                   <div className="relative">
-                    {/* Horizontal Golden-Cyan Circuit Conduit Line behind row nodes */}
-                    <div className="hidden sm:block absolute left-8 right-8 top-1/2 -translate-y-1/2 h-[2px] bg-gradient-to-r from-amber-500/25 via-sky-400/35 to-emerald-400/25 pointer-events-none" />
+                    {/* Horizontal Golden-Cyan Circuit Conduit Line (illuminates when forged) */}
+                    <div
+                      className={`hidden sm:block absolute left-8 right-8 top-1/2 -translate-y-1/2 h-[2px] pointer-events-none transition-opacity ${
+                        rowHasChoice
+                          ? 'bg-gradient-to-r from-amber-400/75 via-sky-400/75 to-emerald-400/75'
+                          : 'bg-gradient-to-r from-amber-500/20 via-sky-400/25 to-emerald-400/20'
+                      }`}
+                    />
 
                     <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {nodes.map((node) => {
-                        const rank = hud.player.upgrades[node.id] ?? 0;
-                        const maxed = rank >= node.maxRank;
-                        const canAfford = !maxed && hud.player.solar >= node.cost;
+                        const owned = (hud.player.upgrades[node.id] ?? 0) >= node.maxRank;
+                        const check = canForgeTalent(
+                          hud.player.upgrades,
+                          hud.player.heroId,
+                          node,
+                          hud.player.solar
+                        );
+                        const rowLocked = check.reason === 'row_locked';
+                        const canForge = check.allowed;
                         const asp = ASPECT_STYLE[node.aspect];
 
                         return (
@@ -293,7 +364,7 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                             key={node.id}
                             type="button"
                             onClick={() => {
-                              if (canAfford) onBuyUpgrade(node.id);
+                              if (canForge) onBuyUpgrade(node.id);
                             }}
                             onMouseEnter={(e) =>
                               setHoverTarget({
@@ -307,13 +378,15 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                                 prev?.kind === 'upgrade' && prev.node.id === node.id ? null : prev
                               )
                             }
-                            aria-disabled={!canAfford}
+                            aria-disabled={!canForge}
                             className={`text-left p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
-                              maxed
-                                ? `${asp.border} ${asp.bgActive} cursor-help`
-                                : canAfford
-                                  ? `${asp.border} bg-[#12192A] hover:bg-[#19233B] cursor-pointer active:scale-[0.99]`
-                                  : 'border-slate-800/90 bg-[#0B101C] opacity-75 hover:opacity-95 hover:border-slate-600 cursor-help'
+                              owned
+                                ? `${asp.border} ${asp.bgActive} shadow-md shadow-amber-500/10 cursor-help`
+                                : rowLocked
+                                  ? 'border-slate-800/70 bg-[#080B14]/85 opacity-45 hover:opacity-75 cursor-help'
+                                  : canForge
+                                    ? `${asp.border} bg-[#12192A] hover:bg-[#19233B] cursor-pointer active:scale-[0.99]`
+                                    : 'border-slate-800/90 bg-[#0B101C] opacity-80 hover:opacity-100 hover:border-slate-600 cursor-help'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -336,19 +409,16 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                                 </div>
                               </div>
 
-                              {/* Rank Pips */}
-                              <div className="flex items-center gap-1 shrink-0 pt-1">
-                                {Array.from({ length: node.maxRank }).map((_, idx) => (
-                                  <span
-                                    key={idx}
-                                    className={`w-2.5 h-2.5 rounded-xs border ${
-                                      idx < rank
-                                        ? `${asp.dot} border-white/50`
-                                        : 'bg-slate-900 border-slate-600'
-                                    }`}
-                                  />
-                                ))}
-                              </div>
+                              {owned ? (
+                                <span
+                                  className="text-[10px] font-bold shrink-0 pt-0.5"
+                                  style={{ color: asp.color }}
+                                >
+                                  ★ ACTIVE
+                                </span>
+                              ) : rowLocked ? (
+                                <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                              ) : null}
                             </div>
 
                             <div className="flex flex-col gap-1">
@@ -357,29 +427,35 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                               </p>
                               <p
                                 className={`text-[10.5px] leading-snug line-clamp-2 ${
-                                  maxed ? 'text-emerald-300 font-semibold' : 'text-amber-200/80'
+                                  owned ? 'text-emerald-300 font-semibold' : 'text-amber-200/85'
                                 }`}
                               >
                                 ★ {node.capstoneText}
                               </p>
                             </div>
 
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px]">
-                              <span className="font-mono-num text-slate-400">
-                                Rank {rank}/{node.maxRank}
+                            <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/80 text-[11px]">
+                              <span className="text-slate-400">
+                                {owned
+                                  ? 'Capstone Unlocked'
+                                  : rowLocked
+                                    ? 'Unlocks at Overclock'
+                                    : check.isOverclock
+                                      ? 'Overclock Forge'
+                                      : 'Instant Capstone'}
                               </span>
-                              {maxed ? (
-                                <span className="font-bold" style={{ color: asp.color }}>
-                                  MASTERED
-                                </span>
+                              {owned ? (
+                                <span className="font-bold text-emerald-300">Forged</span>
+                              ) : rowLocked ? (
+                                <span className="font-mono-num text-slate-500">Locked</span>
                               ) : (
                                 <span
                                   className={`flex items-center gap-1 font-mono-num font-bold ${
-                                    canAfford ? 'text-amber-300' : 'text-slate-500'
+                                    canForge ? 'text-amber-300' : 'text-slate-500'
                                   }`}
                                 >
                                   <SolarCrystalIcon className="w-3.5 h-3.5" />
-                                  {node.cost}
+                                  {check.cost}
                                 </span>
                               )}
                             </div>

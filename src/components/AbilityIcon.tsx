@@ -1,80 +1,129 @@
 import type { AbilityMeta, UpgradeNode } from '../game/types';
 
+export function RelicCorners({ color = '#D9A441' }: { color?: string }) {
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1.5 left-1.5 w-2.5 h-2.5 border-t border-l opacity-65"
+        style={{ borderColor: color }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1.5 right-1.5 w-2.5 h-2.5 border-t border-r opacity-65"
+        style={{ borderColor: color }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-1.5 left-1.5 w-2.5 h-2.5 border-b border-l opacity-65"
+        style={{ borderColor: color }}
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-1.5 right-1.5 w-2.5 h-2.5 border-b border-r opacity-65"
+        style={{ borderColor: color }}
+      />
+    </>
+  );
+}
+
 export function SolarnautsLogo({ className = '' }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 460 86"
+      viewBox="0 0 470 76"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       aria-label="Solarnauts"
     >
-      {/* Gothic Astrolabe & Alien Relic Emblem */}
-      <g transform="translate(4, 6)">
+      {/* Gothic Astrolabe & Consecrated Alien Reliquary Crest */}
+      <g transform="translate(2, 3)">
         <polygon
-          points="36,2 68,20 68,54 36,72 4,54 4,20"
-          fill="#0B0F1A"
-          stroke="#F59E0B"
-          strokeWidth="3.2"
+          points="35,2 66,19 66,52 35,69 4,52 4,19"
+          fill="#090D18"
+          stroke="url(#crestRim)"
+          strokeWidth="2.6"
         />
-        <circle cx="36" cy="37" r="22" stroke="#38BDF8" strokeWidth="1.8" strokeDasharray="5 4" />
         <polygon
-          points="36,10 53,37 36,64 19,37"
-          fill="#F59E0B"
-          stroke="#07090F"
-          strokeWidth="2.8"
+          points="35,7 60,21 60,50 35,64 10,50 10,21"
+          fill="none"
+          stroke="rgba(251, 191, 36, 0.28)"
+          strokeWidth="1"
         />
-        <polygon points="36,17 45,37 36,51 27,37" fill="#FEF08A" />
-        <path d="M12 24 L20 28 M60 24 L52 28 M12 50 L20 46 M60 50 L52 46" stroke="#38BDF8" strokeWidth="2.2" strokeLinecap="round" />
+        <circle cx="35" cy="35.5" r="20.5" stroke="#38BDF8" strokeWidth="1.5" strokeDasharray="4 3.5" />
+        {/* Cathedral Spear-Cross & Solar Diamond */}
+        <path d="M35 8 L35 63 M14 35.5 L56 35.5" stroke="rgba(251, 191, 36, 0.45)" strokeWidth="1.4" />
+        <polygon
+          points="35,11 50,35.5 35,60 20,35.5"
+          fill="url(#solarWordGrad)"
+          stroke="#070910"
+          strokeWidth="2.4"
+        />
+        <polygon points="35,19 42.5,35.5 35,49 27.5,35.5" fill="#FEF9C3" />
       </g>
 
+      {/* Engraved Cathedral Serif Wordmark */}
       <text
-        x="86"
-        y="53"
-        fill="#07090F"
-        stroke="#07090F"
-        strokeWidth="9"
+        x="84"
+        y="47"
+        fill="#070910"
+        stroke="#070910"
+        strokeWidth="8"
         strokeLinejoin="round"
         style={{
-          fontFamily: "'Bricolage Grotesque', sans-serif",
+          fontFamily: "'Cinzel', Georgia, serif",
           fontWeight: 800,
-          fontSize: '46px',
-          letterSpacing: '-0.02em',
+          fontSize: '42px',
+          letterSpacing: '0.04em',
         }}
       >
         SOLARNAUTS
       </text>
       <text
-        x="86"
-        y="53"
+        x="84"
+        y="47"
         fill="url(#solarWordGrad)"
         style={{
-          fontFamily: "'Bricolage Grotesque', sans-serif",
+          fontFamily: "'Cinzel', Georgia, serif",
           fontWeight: 800,
-          fontSize: '46px',
-          letterSpacing: '-0.02em',
+          fontSize: '42px',
+          letterSpacing: '0.04em',
         }}
       >
         SOLARNAUTS
       </text>
+
+      {/* Hairline Gilded Rule + Clean Craft Subtitle */}
+      <line x1="86" y1="55" x2="438" y2="55" stroke="url(#ruleGrad)" strokeWidth="1.2" />
       <text
-        x="89"
-        y="74"
-        fill="#94A3B8"
+        x="86"
+        y="69"
+        fill="#CBD5E1"
         style={{
           fontFamily: "'Plus Jakarta Sans', sans-serif",
-          fontWeight: 600,
-          fontSize: '12px',
-          letterSpacing: '0.15em',
+          fontWeight: 500,
+          fontSize: '11.5px',
+          letterSpacing: '0.08em',
         }}
       >
-        SACRED · PRIMORDIAL · XENO-TECH 3V3 ARENA
+        Sacred · Primordial · Xeno-Tech Arena
       </text>
+
       <defs>
-        <linearGradient id="solarWordGrad" x1="86" y1="14" x2="86" y2="56" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#FEF08A" />
-          <stop offset="52%" stopColor="#F59E0B" />
-          <stop offset="100%" stopColor="#EA580C" />
+        <linearGradient id="solarWordGrad" x1="84" y1="10" x2="84" y2="50" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FEF3C7" />
+          <stop offset="50%" stopColor="#F59E0B" />
+          <stop offset="100%" stopColor="#D97706" />
+        </linearGradient>
+        <linearGradient id="crestRim" x1="4" y1="2" x2="66" y2="69" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FDE68A" />
+          <stop offset="55%" stopColor="#D97706" />
+          <stop offset="100%" stopColor="#38BDF8" />
+        </linearGradient>
+        <linearGradient id="ruleGrad" x1="86" y1="55" x2="438" y2="55" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#F59E0B" stopOpacity="0.85" />
+          <stop offset="50%" stopColor="#38BDF8" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="#38BDF8" stopOpacity="0" />
         </linearGradient>
       </defs>
     </svg>

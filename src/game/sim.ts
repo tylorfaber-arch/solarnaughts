@@ -1,4 +1,4 @@
-import { computeHeroStats, HERO_LIST, HERO_MAP } from './heroes.ts';
+import { canForgeTalent, computeHeroStats, HERO_LIST, HERO_MAP } from './heroes.ts';
 import {
   BASE_ZONES,
   CORE_SPOTS,
@@ -26,6 +26,7 @@ import type {
   HeroEntity,
   HeroId,
   HookEntity,
+  KillFeedEntry,
   NeutralCreepEntity,
   ProjectileEntity,
   SolarCubeEntity,
@@ -54,14 +55,14 @@ interface WaveTierConfig {
   damage: number;
 }
 
-// Escalating 6-tier waves guarantee a decisive 15-20 minute match finish
+// Escalating 6-tier waves pace matches to a decisive 15-20 minute finish
 const WAVE_TIERS: WaveTierConfig[] = [
-  { tier: 1, name: 'Tier I · Initiates', startSec: 0, countPerLane: 1, hp: 115, damage: 12 },
-  { tier: 2, name: 'Tier II · Zealots', startSec: 150, countPerLane: 2, hp: 170, damage: 16 },
-  { tier: 3, name: 'Tier III · Siege Vanguard', startSec: 300, countPerLane: 2, hp: 255, damage: 23 },
-  { tier: 4, name: 'Tier IV · Sanctum Breakers', startSec: 480, countPerLane: 3, hp: 365, damage: 32 },
-  { tier: 5, name: 'Tier V · Void Juggernauts', startSec: 690, countPerLane: 3, hp: 520, damage: 44 },
-  { tier: 6, name: 'Tier VI · Cataclysm Horde', startSec: 900, countPerLane: 4, hp: 740, damage: 62 },
+  { tier: 1, name: 'Tier I · Initiates', startSec: 0, countPerLane: 1, hp: 120, damage: 12 },
+  { tier: 2, name: 'Tier II · Zealots', startSec: 180, countPerLane: 2, hp: 185, damage: 17 },
+  { tier: 3, name: 'Tier III · Siege Vanguard', startSec: 360, countPerLane: 2, hp: 280, damage: 25 },
+  { tier: 4, name: 'Tier IV · Sanctum Breakers', startSec: 570, countPerLane: 3, hp: 410, damage: 35 },
+  { tier: 5, name: 'Tier V · Void Juggernauts', startSec: 780, countPerLane: 3, hp: 590, damage: 48 },
+  { tier: 6, name: 'Tier VI · Cataclysm Horde', startSec: 960, countPerLane: 4, hp: 840, damage: 68 },
 ];
 
 export class ArenaSimulation {
@@ -77,6 +78,8 @@ export class ArenaSimulation {
   public firstBloodAwarded = false;
   public bannerIdCounter = 1;
   public banner: AnnouncerBanner | null = null;
+  public killFeedIdCounter = 1;
+  public killFeed: KillFeedEntry[] = [];
 
   public heroes: HeroEntity[] = [];
   public droids: DroidEntity[] = [];
@@ -116,13 +119,13 @@ export class ArenaSimulation {
         chosen = cfg;
       }
     }
-    // Beyond 15 minutes, add extra overtime scaling every minute so games always close out before 20 min
-    if (this.matchTime > 900) {
-      const extraMins = Math.floor((this.matchTime - 900) / 60);
+    // Beyond 17 minutes, add extra overtime scaling every minute so games always close out cleanly before 20 min
+    if (this.matchTime > 1020) {
+      const extraMins = Math.floor((this.matchTime - 1020) / 60) + 1;
       return {
         ...chosen,
-        hp: chosen.hp + extraMins * 110,
-        damage: chosen.damage + extraMins * 10,
+        hp: chosen.hp + extraMins * 160,
+        damage: chosen.damage + extraMins * 14,
       };
     }
     return chosen;
@@ -140,6 +143,7 @@ export class ArenaSimulation {
     this.redKills = 0;
     this.firstBloodAwarded = false;
     this.banner = null;
+    this.killFeed = [];
     this.pendingFx = [];
 
     this.heroes = [];
@@ -154,7 +158,7 @@ export class ArenaSimulation {
 
     this.turrets = INITIAL_TURRET_SPOTS.map((sp) => {
       const isInner = sp.tier === 'inner';
-      const maxHp = isInner ? 1250 : 950;
+      const maxHp = isInner ? 3000 : 2200;
       return {
         id: sp.id,
         team: sp.team,
@@ -171,7 +175,7 @@ export class ArenaSimulation {
         attackCd: 0.4,
         aimAngle: sp.team === 'blue' ? 0 : Math.PI,
         hitFlashTimer: 0,
-        range: 365,
+        range: 375,
       };
     });
 
@@ -183,8 +187,8 @@ export class ArenaSimulation {
         y: CORE_SPOTS.blue.y,
         w: 118,
         h: 164,
-        hp: 2200,
-        maxHp: 2200,
+        hp: 4800,
+        maxHp: 4800,
         shielded: true,
         hitFlashTimer: 0,
         pulsePhase: 0,
@@ -196,8 +200,8 @@ export class ArenaSimulation {
         y: CORE_SPOTS.red.y,
         w: 118,
         h: 164,
-        hp: 2200,
-        maxHp: 2200,
+        hp: 4800,
+        maxHp: 4800,
         shielded: true,
         hitFlashTimer: 0,
         pulsePhase: 0,
@@ -319,7 +323,7 @@ export class ArenaSimulation {
     const def = HERO_MAP[assignedHeroId];
     this.reconfigureHeroSlot(botSlot, assignedHeroId, playerName.trim().slice(0, 16) || def.name);
     botSlot.isPlayer = false;
-    botSlot.solar = Math.max(130, Math.floor(botSlot.solar));
+    botSlot.solar = Math.max(100, Math.floor(botSlot.solar));
     botSlot.totalSolarEarned = Math.max(botSlot.totalSolarEarned, botSlot.solar);
     botSlot.totalSolarSpent = 0;
     botSlot.kills = 0;
@@ -359,6 +363,61 @@ export class ArenaSimulation {
     slot.meltdownTimer = 0;
     slot.spinTimer = 0;
     slot.dashTimer = 0;
+  }
+
+  public switchHumanHero(
+    heroEntityId: string,
+    requestedHeroId: HeroId
+  ): { hero: HeroEntity; assignedHeroId: HeroId } | null {
+    const hero = this.heroes.find((h) => h.id === heroEntityId);
+    if (!hero || this.phase !== 'PLAYING') return null;
+    if (hero.heroId === requestedHeroId) {
+      return { hero, assignedHeroId: hero.heroId };
+    }
+
+    // Refuse if another human currently controls requestedHeroId
+    const heldByOtherHuman = this.heroes.some(
+      (h) => h.id !== hero.id && this.humanIds.has(h.id) && h.heroId === requestedHeroId
+    );
+    if (heldByOtherHuman) return null;
+
+    // If a bot currently holds requestedHeroId, swap that bot onto a spare unused champion
+    const conflictingBot = this.heroes.find(
+      (h) => h.id !== hero.id && !this.humanIds.has(h.id) && h.heroId === requestedHeroId
+    );
+    if (conflictingBot) {
+      const usedSet = new Set<HeroId>(this.heroes.map((h) => h.heroId));
+      usedSet.add(requestedHeroId);
+      const spare = HERO_LIST.find((h) => !usedSet.has(h.id))?.id ?? hero.heroId;
+      this.reconfigureHeroSlot(conflictingBot, spare, `${HERO_MAP[spare].name} (Bot)`);
+    }
+
+    // Refund spent Relic Essence so the player can forge a fresh build immediately
+    const refundedRelic = Math.floor(hero.totalSolarSpent);
+    hero.solar += refundedRelic;
+    hero.totalSolarSpent = 0;
+
+    // Clear active summons/hooks/hazards owned by this hero before switching
+    this.summons = this.summons.filter((s) => s.ownerId !== hero.id);
+    this.hooks = this.hooks.filter((hk) => hk.ownerId !== hero.id);
+
+    const preservedName = hero.isPlayer
+      ? `${HERO_MAP[requestedHeroId].name} (You)`
+      : hero.name;
+    this.reconfigureHeroSlot(hero, requestedHeroId, preservedName);
+    hero.primaryCd = 0;
+    hero.skill1Cd = 0;
+    hero.skill2Cd = 0;
+    hero.respawnTimer = 0;
+    this.startDropPod(hero);
+
+    this.pushBanner(
+      `${hero.name.replace(/ \(You\)$/, '').toUpperCase()} SWITCHED CHAMPION`,
+      `Deploying as ${HERO_MAP[requestedHeroId].name}${refundedRelic > 0 ? ` · +${refundedRelic} Relic Refunded` : ''}`,
+      hero.team,
+      2.6
+    );
+    return { hero, assignedHeroId: requestedHeroId };
   }
 
   public removeHumanPlayer(heroEntityId: string): void {
@@ -405,14 +464,13 @@ export class ArenaSimulation {
     const def = HERO_MAP[hero.heroId];
     const node = def.upgrades.find((u) => u.id === upgradeId);
     if (!node) return false;
-    const curRank = hero.upgrades[upgradeId] ?? 0;
-    if (curRank >= node.maxRank) return false;
-    if (hero.solar < node.cost) return false;
+    const check = canForgeTalent(hero.upgrades, hero.heroId, node, hero.solar);
+    if (!check.allowed) return false;
 
     const prevStats = computeHeroStats(hero.heroId, hero.upgrades, hero.bonusMaxHp);
-    hero.solar -= node.cost;
-    hero.totalSolarSpent += node.cost;
-    hero.upgrades[upgradeId] = curRank + 1;
+    hero.solar -= check.cost;
+    hero.totalSolarSpent += check.cost;
+    hero.upgrades[upgradeId] = 1;
     const nextStats = computeHeroStats(hero.heroId, hero.upgrades, hero.bonusMaxHp);
     const hpGain = Math.max(0, nextStats.maxHp - prevStats.maxHp);
     hero.maxHp = nextStats.maxHp;
@@ -454,6 +512,7 @@ export class ArenaSimulation {
       redKills: this.redKills,
       humanCount: this.humanIds.size,
       banner: this.banner ? { ...this.banner } : null,
+      killFeed: this.killFeed.map((k) => ({ ...k })),
       heroes: this.heroes.map((h) => ({
         id: h.id,
         heroId: h.heroId,
@@ -627,6 +686,13 @@ export class ArenaSimulation {
       if (this.banner.timer <= 0) this.banner = null;
     }
 
+    if (this.killFeed.length > 0) {
+      for (const entry of this.killFeed) {
+        entry.timer -= dt;
+      }
+      this.killFeed = this.killFeed.filter((entry) => entry.timer > 0);
+    }
+
     const waveCfg = this.getWaveConfig();
     if (waveCfg.tier > this.waveTier) {
       this.waveTier = waveCfg.tier;
@@ -686,8 +752,8 @@ export class ArenaSimulation {
       maxHp: stats.maxHp,
       bonusMaxHp: 0,
       shield: 0,
-      solar: 135,
-      totalSolarEarned: 135,
+      solar: 100,
+      totalSolarEarned: 100,
       totalSolarSpent: 0,
       upgrades: {},
       grounded: false,
@@ -772,7 +838,7 @@ export class ArenaSimulation {
           x: base.spawnX + Math.sin(i * 1.4) * 95,
           y: 230 + i * 94,
           collected: false,
-          value: 9,
+          value: 7,
         }))
       : [];
   }
@@ -790,6 +856,17 @@ export class ArenaSimulation {
       tone,
       timer: duration,
     };
+  }
+
+  private pushKillFeed(entry: Omit<KillFeedEntry, 'id' | 'timer'>): void {
+    this.killFeed.unshift({
+      ...entry,
+      id: this.killFeedIdCounter++,
+      timer: 7.5,
+    });
+    if (this.killFeed.length > 4) {
+      this.killFeed.length = 4;
+    }
   }
 
   private spawnDroidWave(cfg: WaveTierConfig): void {
@@ -1178,7 +1255,31 @@ export class ArenaSimulation {
       }
 
       if (h.jumpBufferTimer > 0) {
-        if (h.coyoteTimer > 0) {
+        // Jump pads activate deliberately when jumping while standing over them!
+        const activePad = JUMP_PADS.find(
+          (jp) =>
+            h.x + h.w * 0.45 > jp.x &&
+            h.x - h.w * 0.45 < jp.x + jp.w &&
+            h.y + h.h / 2 >= jp.y - 12 &&
+            h.y + h.h / 2 <= jp.y + 26
+        );
+        if (activePad) {
+          h.vy = activePad.vy;
+          h.vx = activePad.vx + moveDir * 140;
+          h.grounded = false;
+          h.coyoteTimer = 0;
+          h.jumpBufferTimer = 0;
+          h.jumpsRemaining = Math.max(1, maxJumps - 1);
+          h.squashX = 0.76;
+          h.squashY = 1.32;
+          this.emitFx({
+            kind: 'jumppad',
+            x: activePad.x + activePad.w / 2,
+            y: activePad.y,
+            color: activePad.color,
+            heroEntityId: h.id,
+          });
+        } else if (h.coyoteTimer > 0) {
           h.vy = -stats.jumpForce;
           h.grounded = false;
           h.coyoteTimer = 0;
@@ -1218,24 +1319,6 @@ export class ArenaSimulation {
     }
 
     this.moveAndCollide(h, dt);
-
-    for (const jp of JUMP_PADS) {
-      if (
-        h.x + h.w * 0.4 > jp.x &&
-        h.x - h.w * 0.4 < jp.x + jp.w &&
-        h.y + h.h / 2 >= jp.y - 6 &&
-        h.y + h.h / 2 <= jp.y + 22 &&
-        h.vy >= -80
-      ) {
-        h.vy = jp.vy;
-        h.vx = jp.vx + moveDir * 140;
-        h.grounded = false;
-        h.jumpsRemaining = Math.max(1, maxJumps - 1);
-        h.squashX = 0.76;
-        h.squashY = 1.32;
-        this.emitFx({ kind: 'jumppad', x: jp.x + jp.w / 2, y: jp.y, color: jp.color, heroEntityId: h.id });
-      }
-    }
 
     if (wantPrimary && h.primaryCd <= 0 && h.spinTimer <= 0 && h.dashTimer <= 0) {
       this.castPrimary(h, stats);
@@ -1705,7 +1788,7 @@ export class ArenaSimulation {
       this.emitFx({ kind: 'ability', tag: 'dash', x: h.x, y: h.y, ownerId: h.id });
     } else if (h.heroId === 'bastion') {
       // Sanctified Clamp
-      const biteX = h.x + h.facing * 46;
+      const biteX = h.x + h.facing * 64;
       const biteY = h.y;
       this.emitFx({ kind: 'ring', x: biteX, y: biteY, radius: stats.skill1Radius * 0.9, color: '#FBBF24' });
       this.emitFx({ kind: 'ability', tag: 'bite', x: biteX, y: biteY, ownerId: h.id });
@@ -2566,7 +2649,7 @@ export class ArenaSimulation {
             vx: Math.cos(t.aimAngle) * 690,
             vy: Math.sin(t.aimAngle) * 690,
             radius: 7,
-            damage: t.tier === 'inner' ? 30 : 24,
+            damage: t.tier === 'inner' ? 46 : 36,
             healAmount: 0,
             healSolarBonus: 0,
             splashRadius: 0,
@@ -3249,7 +3332,7 @@ export class ArenaSimulation {
 
       if (killer && killer.team !== target.team) {
         killer.kills += 1;
-        this.grantSolar(killer, 75, target.x, target.y - 12);
+        this.grantSolar(killer, 55, target.x, target.y - 12);
         if (killer.team === 'blue') this.blueKills += 1;
         else this.redKills += 1;
 
@@ -3283,25 +3366,47 @@ export class ArenaSimulation {
           this.grantSolar(killer, 45, killer.x, killer.y - 26);
         }
 
+        let assistCount = 0;
         for (const ally of this.heroes) {
           if (ally.team === killer.team && ally.id !== killer.id && ally.alive && Math.hypot(ally.x - target.x, ally.y - target.y) < 420) {
             ally.assists += 1;
-            this.grantSolar(ally, 35, ally.x, ally.y - 18);
+            assistCount += 1;
+            this.grantSolar(ally, 25, ally.x, ally.y - 18);
           }
         }
+
+        this.pushKillFeed({
+          kind: 'hero',
+          killerName: killer.name,
+          killerTeam: killer.team,
+          killerHeroId: killer.heroId,
+          victimName: target.name,
+          victimTeam: target.team,
+          victimHeroId: target.heroId,
+          assistCount,
+        });
 
         if (!this.firstBloodAwarded) {
           this.firstBloodAwarded = true;
           this.pushBanner(
             'FIRST BLOOD!',
-            `${killer.name} struck down ${target.name} (+75 Relic)`,
+            `${killer.name} struck down ${target.name} (+55 Relic)`,
             killer.team,
             3.0
           );
         }
       } else {
+        const oppTeam: Team = target.team === 'blue' ? 'red' : 'blue';
         if (target.team === 'blue') this.redKills += 1;
         else this.blueKills += 1;
+        this.pushKillFeed({
+          kind: 'hero',
+          killerName: oppTeam === 'blue' ? 'Sanctum Forces' : 'Invasion Forces',
+          killerTeam: oppTeam,
+          victimName: target.name,
+          victimTeam: target.team,
+          victimHeroId: target.heroId,
+        });
       }
 
       this.emitFx({
@@ -3320,7 +3425,7 @@ export class ArenaSimulation {
     d.hitFlashTimer = 0.1;
     if (d.hp <= 0 && attacker) {
       attacker.droidKills += 1;
-      this.grantSolar(attacker, 16 + d.tier * 2, d.x, d.y - 10);
+      this.grantSolar(attacker, 11 + d.tier, d.x, d.y - 10);
       const aStats = computeHeroStats(attacker.heroId, attacker.upgrades, attacker.bonusMaxHp);
       if (aStats.capstones['mh_u3']) {
         this.healHero(attacker, 18);
@@ -3342,9 +3447,15 @@ export class ArenaSimulation {
       c.alive = false;
       c.respawnTimer = 26;
       this.healHero(attacker, 55);
-      this.grantSolar(attacker, 28, c.x, c.y - 10);
-      this.emitFx({ kind: 'text', x: c.x, y: c.y - 26, text: '+55 HP · +28 RELIC', color: '#34D399', scale: 1 });
+      this.grantSolar(attacker, 22, c.x, c.y - 10);
+      this.emitFx({ kind: 'text', x: c.x, y: c.y - 26, text: '+55 HP · +22 RELIC', color: '#34D399', scale: 1 });
     }
+  }
+
+  private hasEnemyCreepsNear(team: Team, x: number, y: number, radius = 360): boolean {
+    return this.droids.some(
+      (d) => d.team !== team && d.hp > 0 && Math.hypot(d.x - x, d.y - y) <= radius
+    );
   }
 
   private damageTurret(t: TurretEntity, dmg: number, attacker: HeroEntity | null): void {
@@ -3354,21 +3465,34 @@ export class ArenaSimulation {
       return;
     }
     const mult = attacker ? computeHeroStats(attacker.heroId, attacker.upgrades, attacker.bonusMaxHp).towerDamageMult : 1;
-    t.hp -= dmg * mult;
+    // 45% Backdoor Fortification when attacking without escorting lane creeps
+    const backdoorMult = attacker && !this.hasEnemyCreepsNear(t.team, t.x, t.y) ? 0.55 : 1;
+    t.hp -= dmg * mult * backdoorMult;
     t.hitFlashTimer = 0.12;
     if (t.hp <= 0) {
       t.alive = false;
       t.hp = 0;
       const winningTeam: Team = t.team === 'blue' ? 'red' : 'blue';
+      const bounty = t.tier === 'inner' ? 85 : 60;
       for (const h of this.heroes) {
         if (h.team === winningTeam) {
-          this.grantSolar(h, t.tier === 'inner' ? 110 : 80, h.x, h.y - 24);
+          this.grantSolar(h, bounty, h.x, h.y - 24);
         }
       }
       this.emitFx({ kind: 'explosion', x: t.x, y: t.y - 50, radius: 135, color: '#F59E0B', heavy: true, ownerId: attacker?.id ?? '' });
+      const laneLabel = t.lane === 'top' ? 'Top' : 'Bot';
+      const tierLabel = t.tier === 'inner' ? 'Inner' : 'Outer';
+      this.pushKillFeed({
+        kind: 'tower',
+        killerName: attacker ? attacker.name : winningTeam === 'blue' ? 'Sanctum Wave' : 'Invasion Wave',
+        killerTeam: winningTeam,
+        killerHeroId: attacker?.heroId,
+        victimName: `${laneLabel} ${tierLabel} Tower`,
+        victimTeam: t.team,
+      });
       this.pushBanner(
         `${t.lane.toUpperCase()} ${t.tier.toUpperCase()} TOWER SHATTERED!`,
-        `${winningTeam === 'blue' ? 'Sanctum' : 'Invasion'} claims +${t.tier === 'inner' ? 110 : 80} Relic team bounty!`,
+        `${winningTeam === 'blue' ? 'Sanctum' : 'Invasion'} claims +${bounty} Relic team bounty!`,
         winningTeam,
         3.2
       );
@@ -3381,7 +3505,8 @@ export class ArenaSimulation {
       return;
     }
     const mult = attacker ? computeHeroStats(attacker.heroId, attacker.upgrades, attacker.bonusMaxHp).towerDamageMult : 1;
-    c.hp = Math.max(0, c.hp - dmg * mult);
+    const backdoorMult = attacker && !this.hasEnemyCreepsNear(c.team, c.x, c.y, 400) ? 0.55 : 1;
+    c.hp = Math.max(0, c.hp - dmg * mult * backdoorMult);
     c.hitFlashTimer = 0.12;
     if (c.hp <= 0 && this.phase === 'PLAYING') {
       const winner: Team = c.team === 'blue' ? 'red' : 'blue';
@@ -3442,7 +3567,7 @@ export class ArenaSimulation {
       h.aiDecisionTimer = this.difficulty === 'veteran' ? 0.32 : this.difficulty === 'standard' ? 0.5 : 0.78;
       const def = HERO_MAP[h.heroId];
       const affordable = def.upgrades.filter(
-        (u) => (h.upgrades[u.id] ?? 0) < u.maxRank && h.solar >= u.cost
+        (u) => canForgeTalent(h.upgrades, h.heroId, u, h.solar).allowed
       );
       if (affordable.length > 0 && Math.random() < 0.72) {
         const pick = affordable[Math.floor(Math.random() * affordable.length)];

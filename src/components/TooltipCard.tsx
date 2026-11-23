@@ -67,7 +67,7 @@ export function AbilityTooltipCard({
             return (
               <div key={u.name} className="flex items-baseline justify-between gap-2 text-[11px]">
                 <span className="font-semibold truncate" style={{ color: asp.color }}>
-                  {u.name} ({u.rank}/{u.maxRank})
+                  ★ {u.name}
                 </span>
                 <span className="font-mono-num text-slate-300 shrink-0">{u.perRankText}</span>
               </div>
@@ -119,7 +119,7 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
             <span className="text-slate-200 font-semibold">{data.node.archetype}</span>
             <span className="text-slate-600" aria-hidden="true">·</span>
             <span className="font-mono-num text-slate-300">
-              Rank {data.rank}/{data.maxRank}
+              {data.maxed ? 'Forged' : data.isOverclock ? 'Overclock' : 'Single Forge'}
             </span>
           </div>
         </div>
@@ -127,7 +127,11 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
         <div className="shrink-0 text-right">
           {data.maxed ? (
             <span className="text-[11px] font-bold text-emerald-300">
-              Mastered
+              Active
+            </span>
+          ) : data.rowLocked ? (
+            <span className="text-[11px] font-semibold text-slate-500">
+              Row Locked
             </span>
           ) : (
             <span
@@ -136,7 +140,7 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
               }`}
             >
               <SolarCrystalIcon className="w-3.5 h-3.5" />
-              {data.node.cost}
+              {data.cost}
             </span>
           )}
         </div>
@@ -145,10 +149,10 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
       {/* Lore & Mechanics Summary */}
       <p className="text-xs text-slate-200 leading-snug mt-2">{data.node.summary}</p>
       <div className="mt-1.5 text-[11px] font-mono-num font-semibold" style={{ color: asp.color }}>
-        Per Rank: {data.node.perRankText}
+        Stat Boost: {data.node.perRankText}
       </div>
 
-      {/* Max-Rank Capstone Showcase */}
+      {/* Immediate Capstone Showcase */}
       <div
         className={`mt-2.5 rounded-lg p-2 border ${
           data.maxed
@@ -157,22 +161,22 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
         }`}
       >
         <div
-          className={`text-[10px] font-extrabold tracking-wide ${
+          className={`text-[10.5px] font-bold tracking-wide ${
             data.maxed ? 'text-emerald-300' : 'text-amber-300'
           }`}
         >
-          {data.maxed ? '★ CAPSTONE ACTIVE' : `★ MAX-RANK CAPSTONE (RANK ${data.maxRank})`}
+          {data.maxed ? '★ Capstone Active' : '★ Instant Capstone Effect'}
         </div>
         <p className="text-[11px] text-slate-100 leading-snug mt-0.5">
           {data.node.capstoneText}
         </p>
       </div>
 
-      {/* Live Next-Rank Delta Preview */}
+      {/* Live Forge Delta Preview */}
       {!data.maxed && data.deltas.length > 0 && (
         <div className="mt-2.5 pt-2 border-t border-slate-800/90 flex flex-col gap-1">
           <div className="text-[10px] font-semibold text-amber-300/90">
-            Next Rank Upgrade Effect
+            Immediate Stat Upgrade
           </div>
           {data.deltas.map((d) => (
             <div key={d.label} className="flex items-baseline justify-between gap-2 text-[11px]">
@@ -190,10 +194,12 @@ export function UpgradeTooltipCard({ data }: { data: UpgradeTooltipData }) {
       {/* Action Hint */}
       <div className="mt-2 pt-2 border-t border-slate-800/80 text-[10.5px] text-slate-400">
         {data.maxed
-          ? 'Capstone mastered and active in combat.'
-          : data.canAfford
-            ? 'Click to forge this talent immediately.'
-            : `Need ${data.node.cost} Relic Essence to forge.`}
+          ? 'Specialization forged and active in combat.'
+          : data.rowLocked
+            ? 'Row already specialized. Forge all 4 rows to unlock Overclock picks (800 Relic).'
+            : data.canAfford
+              ? `Click to forge immediately for ${data.cost} Relic Essence.`
+              : `Need ${data.cost} Relic Essence to forge.`}
       </div>
     </div>
   );

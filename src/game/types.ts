@@ -456,6 +456,19 @@ export interface AnnouncerBanner {
   timer: number;
 }
 
+export interface KillFeedEntry {
+  id: number;
+  kind: 'hero' | 'tower';
+  killerName: string;
+  killerTeam: Team;
+  killerHeroId?: HeroId;
+  victimName: string;
+  victimTeam: Team;
+  victimHeroId?: HeroId;
+  assistCount?: number;
+  timer: number;
+}
+
 export interface MinimapBlip {
   x: number;
   y: number;
@@ -532,6 +545,10 @@ export interface HudSnapshot {
     humanCount: number;
   };
   banner: AnnouncerBanner | null;
+  killFeed: KillFeedEntry[];
   minimap: MinimapBlip[];
+  minimapViewport?: { x: number; y: number; w: number; h: number };
+  turretStatus?: Array<{ team: Team; lane: 'top' | 'bot'; tier: 'outer' | 'inner'; alive: boolean }>;
+  takenHumanHeroes?: HeroId[];
   scoreboard: ScoreboardRow[];
 }

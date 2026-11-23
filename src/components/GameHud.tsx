@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Volume2, VolumeX, Pause, Copy, Check } from 'lucide-react';
+import { Volume2, VolumeX, Pause, Copy, Check, Swords, Shield, Flame } from 'lucide-react';
 import { HERO_MAP } from '../game/heroes';
+import { JUMP_PADS, WORLD_H, WORLD_W } from '../game/map';
 import {
   ASPECT_META,
   buildAbilityTooltip,
   buildUpgradeTooltip,
 } from '../game/tooltips';
 import type { HudSnapshot } from '../game/types';
-import { AbilitySvgIcon, SolarCrystalIcon, UpgradeSvgIcon } from './AbilityIcon';
+import { AbilitySvgIcon, RelicCorners, SolarCrystalIcon, UpgradeSvgIcon } from './AbilityIcon';
 import { AbilityTooltipCard, SimpleTooltipCard, UpgradeTooltipCard } from './TooltipCard';
 
 interface GameHudProps {
@@ -36,12 +37,31 @@ export function GameHud({
   onRecall,
 }: GameHudProps) {
   const [copiedRoom, setCopiedRoom] = useState(false);
-  const [hoveredAbility, setHoveredAbility] = useState<'primary' | 'skill1' | 'skill2' | null>(null);
+  const [hoveredAbility, setHoveredAbility] = useState<'primary' | 'skill1' | 'skill2' | null>(
+    null
+  );
   const [hoveredForgedId, setHoveredForgedId] = useState<string | null>(null);
   const [hoveredUtil, setHoveredUtil] = useState<'relic' | 'forge' | 'recall' | null>(null);
 
   const heroDef = HERO_MAP[hud.player.heroId];
   const hpPct = Math.max(0, Math.min(100, (hud.player.hp / Math.max(1, hud.player.maxHp)) * 100));
+  const shieldPct = Math.max(
+    0,
+    Math.min(100, (hud.player.shield / Math.max(1, hud.player.maxHp)) * 100)
+  );
+  const lowHp = hud.player.alive && hpPct < 30;
+
+  const blueCorePct = Math.max(
+    0,
+    Math.min(100, Math.round((hud.blueCoreHp / Math.max(1, hud.blueCoreMaxHp)) * 100))
+  );
+  const redCorePct = Math.max(
+    0,
+    Math.min(100, Math.round((hud.redCoreHp / Math.max(1, hud.redCoreMaxHp)) * 100))
+  );
+
+  const blueTowers = (hud.turretStatus ?? []).filter((t) => t.team === 'blue');
+  const redTowers = (hud.turretStatus ?? []).filter((t) => t.team === 'red');
 
   const copyRoomCode = () => {
     if (!hud.network.roomId) return;
@@ -91,19 +111,19 @@ export function GameHud({
       {/* TOP BAR ROW */}
       <div className="flex items-start justify-between gap-3">
         {/* Top Left: Online Room Info or K/D/A */}
-        <div className="pointer-events-auto flex items-center gap-3 px-3 py-1.5 rounded-lg bg-[#0A0E1A]/94 border border-slate-700/80 text-xs">
+        <div className="pointer-events-auto flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-[#080B14]/94 border border-slate-700/80 text-xs">
           {hud.network.mode === 'online' ? (
             <>
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   hud.network.connected ? 'bg-emerald-400' : 'bg-rose-500'
                 }`}
-                title={hud.network.connected ? 'WebSocket Connected' : 'Disconnected'}
+                title={hud.network.connected ? 'WebSocket Connected' : 'Reconnecting'}
               />
               <button
                 type="button"
                 onClick={copyRoomCode}
-                className="flex items-center gap-1.5 font-mono-num font-bold text-amber-300 hover:text-amber-200 cursor-pointer"
+                className="flex items-center gap-1.5 font-mono-num font-bold text-amber-300 hover:text-amber-200 cursor-pointer whitespace-nowrap"
                 title="Copy Friend Invite Link"
               >
                 <span>{copiedRoom ? 'Invite Copied!' : `Room ${hud.network.roomId ?? '...'}`}</span>
@@ -114,10 +134,12 @@ export function GameHud({
                 )}
               </button>
               <span className="text-slate-600" aria-hidden="true">·</span>
-              <span className="font-mono-num text-slate-300">{hud.network.humanCount}/6 Live</span>
+              <span className="font-mono-num text-slate-300 whitespace-nowrap">
+                {hud.network.connected ? `${hud.network.humanCount}/6 Live` : 'Reconnecting'}
+              </span>
               <span className="text-slate-600" aria-hidden="true">·</span>
               <span
-                className={`font-mono-num ${
+                className={`font-mono-num whitespace-nowrap ${
                   hud.network.pingMs <= 50
                     ? 'text-emerald-400'
                     : hud.network.pingMs <= 110
@@ -129,7 +151,7 @@ export function GameHud({
               </span>
             </>
           ) : (
-            <span className="text-slate-300 font-mono-num">
+            <span className="text-slate-300 font-mono-num whitespace-nowrap">
               K/D/A{' '}
               <strong className="text-white">
                 {hud.player.kills}/{hud.player.deaths}/{hud.player.assists}
@@ -140,27 +162,53 @@ export function GameHud({
           )}
         </div>
 
-        {/* Top Center: Compact Match Strip (4 Towers/Team · Escalating Wave Tier · Clock) */}
-        <div className="flex items-center gap-4 px-4 py-1.5 rounded-lg bg-[#0A0E1A]/95 border border-amber-500/35">
+        {/* Top Center: Engraved Cathedral Match Plaque (4-Tower Pips · Core Bar · Wave Tier) */}
+        <div className="relative relic-panel flex items-center gap-4 px-5 py-1.5 rounded-xl border border-amber-500/35">
+          <RelicCorners />
+
           {/* Sanctum (Blue) */}
-          <div className="flex items-center gap-2.5">
-            <div className="text-right">
-              <div className="text-[11px] font-semibold text-sky-400">
-                Sanctum{' '}
-                {hud.blueCoreShielded
-                  ? 'Shielded'
-                  : `Core ${Math.round((hud.blueCoreHp / hud.blueCoreMaxHp) * 100)}%`}
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end gap-1 min-w-[102px]">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-300">
+                {hud.blueCoreShielded && <Shield className="w-3 h-3 text-sky-400" />}
+                <span>
+                  Sanctum {hud.blueCoreShielded ? 'Shielded' : `${blueCorePct}%`}
+                </span>
               </div>
-              <div className="text-[11px] font-mono-num text-slate-400">
-                Towers {hud.blueTurretsAlive}/4
+              {/* 4-Tower Diamond Pips + Core Integrity Bar */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1" title={`Sanctum Towers ${hud.blueTurretsAlive}/4`}>
+                  {(blueTowers.length === 4
+                    ? blueTowers
+                    : Array.from({ length: 4 }, (_, i) => ({
+                        alive: i < hud.blueTurretsAlive,
+                      }))
+                  ).map((t, idx) => (
+                    <span
+                      key={idx}
+                      className={`w-2 h-2 rotate-45 border ${
+                        t.alive
+                          ? 'bg-sky-400 border-sky-200'
+                          : 'bg-slate-900 border-slate-700 opacity-50'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <div className="w-12 h-1.5 rounded-full bg-slate-900 overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-sky-400 transition-[width] duration-150"
+                    style={{ width: `${blueCorePct}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <span className="font-display text-xl font-extrabold font-mono-num text-sky-300 min-w-[22px] text-center">
+            <span className="font-display text-2xl font-extrabold font-mono-num text-sky-300 min-w-[24px] text-center">
               {hud.blueKills}
             </span>
           </div>
 
-          <div className="px-3 py-0.5 border-x border-slate-700/80 text-center">
+          {/* Center Clock & Escalating Wave Tier */}
+          <div className="px-3.5 py-0.5 border-x border-amber-500/20 text-center">
             <div className="font-mono-num text-sm font-bold text-white leading-tight">
               {formatClock(hud.matchTime)}
             </div>
@@ -178,61 +226,189 @@ export function GameHud({
           </div>
 
           {/* Invasion (Red) */}
-          <div className="flex items-center gap-2.5">
-            <span className="font-display text-xl font-extrabold font-mono-num text-rose-400 min-w-[22px] text-center">
+          <div className="flex items-center gap-3">
+            <span className="font-display text-2xl font-extrabold font-mono-num text-rose-400 min-w-[24px] text-center">
               {hud.redKills}
             </span>
-            <div className="text-left">
-              <div className="text-[11px] font-semibold text-rose-400">
-                Invasion{' '}
-                {hud.redCoreShielded
-                  ? 'Shielded'
-                  : `Core ${Math.round((hud.redCoreHp / hud.redCoreMaxHp) * 100)}%`}
+            <div className="flex flex-col items-start gap-1 min-w-[102px]">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-rose-400">
+                <span>
+                  Invasion {hud.redCoreShielded ? 'Shielded' : `${redCorePct}%`}
+                </span>
+                {hud.redCoreShielded && <Shield className="w-3 h-3 text-rose-400" />}
               </div>
-              <div className="text-[11px] font-mono-num text-slate-400">
-                Towers {hud.redTurretsAlive}/4
+              <div className="flex items-center gap-2">
+                <div className="w-12 h-1.5 rounded-full bg-slate-900 overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-rose-500 transition-[width] duration-150"
+                    style={{ width: `${redCorePct}%` }}
+                  />
+                </div>
+                <div className="flex items-center gap-1" title={`Invasion Towers ${hud.redTurretsAlive}/4`}>
+                  {(redTowers.length === 4
+                    ? redTowers
+                    : Array.from({ length: 4 }, (_, i) => ({
+                        alive: i < hud.redTurretsAlive,
+                      }))
+                  ).map((t, idx) => (
+                    <span
+                      key={idx}
+                      className={`w-2 h-2 rotate-45 border ${
+                        t.alive
+                          ? 'bg-rose-400 border-rose-200'
+                          : 'bg-slate-900 border-slate-700 opacity-50'
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Top Right: Audio & Pause */}
-        <div className="pointer-events-auto flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onToggleMute}
-            aria-label={muted ? 'Unmute audio' : 'Mute audio'}
-            className="w-9 h-9 rounded-lg bg-[#0A0E1A]/94 border border-slate-700/80 hover:border-slate-500 flex items-center justify-center text-slate-200 cursor-pointer"
-          >
-            {muted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-          </button>
-          <button
-            type="button"
-            onClick={onTogglePause}
-            aria-label="Pause menu"
-            className="w-9 h-9 rounded-lg bg-[#0A0E1A]/94 border border-slate-700/80 hover:border-slate-500 flex items-center justify-center text-slate-200 cursor-pointer"
-          >
-            <Pause className="w-4 h-4" />
-          </button>
+        {/* Top Right: Audio/Pause Controls + Live Kill Feed */}
+        <div className="flex flex-col items-end gap-2">
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={onToggleMute}
+              aria-label={muted ? 'Unmute audio' : 'Mute audio'}
+              className="w-9 h-9 rounded-lg bg-[#080B14]/94 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+            >
+              {muted ? (
+                <VolumeX className="w-4 h-4 text-rose-400" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onTogglePause}
+              aria-label="Match menu"
+              className="w-9 h-9 rounded-lg bg-[#080B14]/94 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+            >
+              <Pause className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* LIVE AUTHORITATIVE KILL FEED */}
+          {hud.killFeed && hud.killFeed.length > 0 && (
+            <div
+              className="flex flex-col items-end gap-1.5 w-[275px] sm:w-[310px]"
+              aria-live="polite"
+            >
+              {hud.killFeed.map((entry) => {
+                const fadeOpacity = entry.timer < 1.2 ? Math.max(0.15, entry.timer / 1.2) : 1;
+                const killerDef = entry.killerHeroId ? HERO_MAP[entry.killerHeroId] : null;
+                const victimDef = entry.victimHeroId ? HERO_MAP[entry.victimHeroId] : null;
+                const isTower = entry.kind === 'tower';
+
+                return (
+                  <div
+                    key={entry.id}
+                    style={{ opacity: fadeOpacity }}
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-lg bg-[#080B14]/92 border text-[11px] shadow-lg transition-opacity duration-150 ${
+                      isTower
+                        ? 'border-amber-400/55'
+                        : entry.killerTeam === 'blue'
+                          ? 'border-sky-500/40'
+                          : 'border-rose-500/40'
+                    }`}
+                  >
+                    {/* Killer Portrait & Name */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {killerDef && (
+                        <img
+                          src={killerDef.portrait}
+                          alt={killerDef.name}
+                          referrerPolicy="no-referrer"
+                          className={`w-5 h-5 rounded object-cover object-top shrink-0 border ${
+                            entry.killerTeam === 'blue' ? 'border-sky-400' : 'border-rose-400'
+                          }`}
+                        />
+                      )}
+                      <span
+                        className={`font-semibold truncate max-w-[92px] ${
+                          entry.killerTeam === 'blue' ? 'text-sky-300' : 'text-rose-300'
+                        }`}
+                      >
+                        {entry.killerName}
+                      </span>
+                      {entry.assistCount && entry.assistCount > 0 ? (
+                        <span className="font-mono-num text-[10px] text-amber-300/90 shrink-0">
+                          +{entry.assistCount}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {/* Action Icon (Crossed Swords for Hero Kill, Flame for Tower Shattered) */}
+                    <span className="shrink-0 text-amber-400">
+                      {isTower ? (
+                        <Flame className="w-3.5 h-3.5" />
+                      ) : (
+                        <Swords className="w-3.5 h-3.5" />
+                      )}
+                    </span>
+
+                    {/* Victim Portrait & Name */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {victimDef && (
+                        <img
+                          src={victimDef.portrait}
+                          alt={victimDef.name}
+                          referrerPolicy="no-referrer"
+                          className={`w-5 h-5 rounded object-cover object-top shrink-0 border opacity-80 grayscale-[35%] ${
+                            entry.victimTeam === 'blue' ? 'border-sky-400' : 'border-rose-400'
+                          }`}
+                        />
+                      )}
+                      <span
+                        className={`font-semibold truncate max-w-[100px] ${
+                          isTower
+                            ? 'text-amber-200'
+                            : entry.victimTeam === 'blue'
+                              ? 'text-sky-300/90'
+                              : 'text-rose-300/90'
+                        }`}
+                      >
+                        {entry.victimName}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* CENTER ANNOUNCER BANNER */}
+      {/* CENTER CATHEDRAL PROCLAMATION BANNER */}
       <div className="flex flex-col items-center justify-start flex-1 pt-4">
         {hud.banner && (
           <div
-            className={`px-5 py-2 rounded-lg border text-center bg-[#0A0E1A]/95 ${
+            className={`relative relic-panel px-7 py-2.5 rounded-xl border text-center ${
               hud.banner.tone === 'gold'
-                ? 'border-amber-400/80'
+                ? 'border-amber-400/75'
                 : hud.banner.tone === 'blue'
-                  ? 'border-sky-400/80'
+                  ? 'border-sky-400/75'
                   : hud.banner.tone === 'emerald'
-                    ? 'border-emerald-400/80'
-                    : 'border-rose-500/80'
+                    ? 'border-emerald-400/75'
+                    : 'border-rose-500/75'
             }`}
           >
+            <RelicCorners
+              color={
+                hud.banner.tone === 'gold'
+                  ? '#FBBF24'
+                  : hud.banner.tone === 'blue'
+                    ? '#38BDF8'
+                    : hud.banner.tone === 'emerald'
+                      ? '#34D399'
+                      : '#F43F5E'
+              }
+            />
             <div
-              className={`font-display text-base font-extrabold tracking-wide ${
+              className={`font-display text-base sm:text-lg font-extrabold tracking-wider ${
                 hud.banner.tone === 'gold'
                   ? 'text-amber-300'
                   : hud.banner.tone === 'blue'
@@ -244,12 +420,13 @@ export function GameHud({
             >
               {hud.banner.title}
             </div>
-            <div className="text-xs text-slate-200">{hud.banner.subtitle}</div>
+            <div className="text-xs text-slate-200 mt-0.5">{hud.banner.subtitle}</div>
           </div>
         )}
 
         {!hud.player.alive && hud.phase === 'PLAYING' && (
-          <div className="mt-8 px-6 py-3 rounded-xl bg-[#0A0E1A]/95 border border-rose-500/60 text-center">
+          <div className="relative relic-panel mt-8 px-6 py-3 rounded-xl border border-rose-500/60 text-center">
+            <RelicCorners color="#F43F5E" />
             <div className="font-display text-lg font-extrabold text-rose-400">
               Fallen — Drop Pod Charging
             </div>
@@ -262,31 +439,35 @@ export function GameHud({
 
       {/* BOTTOM HUD ROW */}
       <div className="flex items-end justify-between gap-3">
-        {/* Bottom Left: Active Forged Items Strip + Player Card */}
+        {/* Bottom Left: Active Forged Items Strip + Champion Unit Frame */}
         <div className="pointer-events-auto relative flex flex-col gap-1.5">
-          {/* Forged Talents / Items Inventory Strip (Hoverable for instant tooltips!) */}
+          {/* Forged Talents Inventory Strip */}
           {forgedNodes.length > 0 && (
-            <div className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-[#0A0E1A]/92 border border-slate-800/90 w-fit max-w-[300px] flex-wrap">
+            <div className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-[#080B14]/94 border border-slate-800/90 w-fit max-w-[308px] flex-wrap">
               {forgedNodes.map((node) => {
                 const rank = hud.player.upgrades[node.id] ?? 0;
+                const maxed = rank >= node.maxRank;
                 const asp = ASPECT_META[node.aspect];
                 return (
                   <div
                     key={node.id}
                     onMouseEnter={() => setHoveredForgedId(node.id)}
-                    onMouseLeave={() => setHoveredForgedId((prev) => (prev === node.id ? null : prev))}
-                    className={`relative w-7 h-7 rounded-md border ${asp.border} bg-[#111829] flex items-center justify-center cursor-help transition-transform hover:scale-110`}
+                    onMouseLeave={() =>
+                      setHoveredForgedId((prev) => (prev === node.id ? null : prev))
+                    }
+                    className={`relative w-7 h-7 rounded-md border ${asp.border} ${
+                      maxed ? 'bg-amber-950/35' : 'bg-[#111829]'
+                    } flex items-center justify-center cursor-help transition-transform hover:scale-110`}
                     style={{ color: asp.color }}
                   >
                     <UpgradeSvgIcon icon={node.icon} className="w-3.5 h-3.5" />
-                    <span className="absolute -bottom-0.5 -right-0.5 px-1 rounded-xs bg-[#070A12] border border-slate-700 font-mono-num text-[9px] font-bold text-white leading-tight">
-                      {rank}
+                    <span className="absolute -bottom-0.5 -right-0.5 px-0.5 rounded-xs bg-[#070910] border border-amber-500/50 text-[8.5px] font-bold text-amber-300 leading-tight">
+                      {maxed ? '★' : rank}
                     </span>
                   </div>
                 );
               })}
 
-              {/* Anchored Forged Item Tooltip */}
               {hoveredForgedNode && (
                 <div className="absolute left-0 bottom-full mb-2 z-50">
                   <UpgradeTooltipCard
@@ -302,9 +483,15 @@ export function GameHud({
             </div>
           )}
 
-          {/* Player Card */}
-          <div className="relative flex items-center gap-3 p-2.5 rounded-xl bg-[#0A0E1A]/95 border border-slate-700/80">
-            <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-amber-500/45 shrink-0 bg-[#070A12]">
+          {/* Champion Unit Frame */}
+          <div
+            className={`relative relic-panel flex items-center gap-3 p-2.5 rounded-xl border transition-colors ${
+              lowHp ? 'border-rose-500/85' : 'border-amber-500/30'
+            }`}
+          >
+            <RelicCorners color={lowHp ? '#F43F5E' : '#D9A441'} />
+
+            <div className="relative w-12 h-12 rounded-lg overflow-hidden border border-amber-500/50 shrink-0 bg-[#070910]">
               <img
                 src={heroDef.portrait}
                 alt={heroDef.name}
@@ -317,21 +504,34 @@ export function GameHud({
               />
             </div>
 
-            <div className="flex flex-col gap-1.5 min-w-[198px]">
+            <div className="flex flex-col gap-1.5 min-w-[208px]">
               <div>
                 <div className="flex items-baseline justify-between text-xs mb-0.5">
                   <span className="font-display font-bold text-white truncate max-w-[118px]">
                     {heroDef.name}
                   </span>
-                  <span className="font-mono-num text-[11px] text-emerald-300 font-semibold">
-                    {hud.player.hp}/{hud.player.maxHp} HP
+                  <span
+                    className={`font-mono-num text-[11px] font-semibold ${
+                      lowHp ? 'text-rose-400' : 'text-emerald-300'
+                    }`}
+                  >
+                    {hud.player.hp}/{hud.player.maxHp}
+                    {hud.player.shield > 0 ? ` (+${hud.player.shield})` : ' HP'}
                   </span>
                 </div>
-                <div className="w-full h-2.5 rounded bg-slate-900 overflow-hidden border border-slate-700">
+                <div className="relative w-full h-2.5 rounded bg-slate-900 overflow-hidden border border-slate-700">
                   <div
-                    className="h-full bg-emerald-500 transition-[width] duration-75"
+                    className={`h-full transition-[width] duration-75 ${
+                      lowHp ? 'bg-rose-500' : 'bg-emerald-500'
+                    }`}
                     style={{ width: `${hpPct}%` }}
                   />
+                  {shieldPct > 0 && (
+                    <div
+                      className="absolute inset-y-0 left-0 bg-sky-400/55 border-r border-sky-200 transition-[width] duration-75"
+                      style={{ width: `${Math.min(100, shieldPct)}%` }}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -352,10 +552,10 @@ export function GameHud({
                   onMouseLeave={() => setHoveredUtil((prev) => (prev === 'forge' ? null : prev))}
                   className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                     shopOpen
-                      ? 'bg-amber-400 text-[#070A12]'
+                      ? 'bg-amber-400 text-[#070910]'
                       : hud.player.affordableUpgrades > 0
                         ? 'bg-amber-500/20 border border-amber-400 text-amber-300 hover:bg-amber-500/30'
-                        : 'bg-slate-800 border border-slate-700 text-slate-300 hover:text-white'
+                        : 'bg-slate-800/90 border border-slate-700 text-slate-300 hover:text-white'
                   }`}
                 >
                   Talents [B]
@@ -370,7 +570,7 @@ export function GameHud({
                   onMouseEnter={() => setHoveredUtil('recall')}
                   onMouseLeave={() => setHoveredUtil((prev) => (prev === 'recall' ? null : prev))}
                   disabled={hud.player.inBase || !hud.player.alive}
-                  className="px-2 py-1 rounded-md text-xs font-medium bg-slate-800 border border-slate-700 text-sky-300 hover:border-sky-400 disabled:opacity-40 cursor-pointer whitespace-nowrap"
+                  className="px-2 py-1 rounded-md text-xs font-medium bg-slate-800/90 border border-slate-700 text-sky-300 hover:border-sky-400 disabled:opacity-40 cursor-pointer whitespace-nowrap"
                 >
                   {hud.player.recallTimer > 0
                     ? `${hud.player.recallTimer.toFixed(1)}s`
@@ -379,7 +579,6 @@ export function GameHud({
               </div>
             </div>
 
-            {/* Utility Button Tooltips */}
             {hoveredUtil === 'relic' && (
               <div className="absolute left-0 bottom-full mb-2 z-50">
                 <SimpleTooltipCard
@@ -432,8 +631,9 @@ export function GameHud({
           </div>
         </div>
 
-        {/* Bottom Center: 3-Slot Interactive Ability Bar with Instant Live Hover Tooltips */}
-        <div className="pointer-events-auto relative flex items-center gap-2 p-2 rounded-xl bg-[#0A0E1A]/95 border border-amber-500/35">
+        {/* Bottom Center: Sculpted 3-Slot Ability Dock */}
+        <div className="pointer-events-auto relative relic-panel flex items-center gap-2.5 px-3 py-2 rounded-xl border border-amber-500/35">
+          <RelicCorners />
           {abilities.map((ab) => {
             const onCd = ab.cd > 0.05;
             const cdPct = onCd ? Math.min(100, (ab.cd / Math.max(0.1, ab.maxCd)) * 100) : 0;
@@ -447,10 +647,12 @@ export function GameHud({
                 key={ab.meta.name}
                 onMouseEnter={() => setHoveredAbility(ab.slot)}
                 onMouseLeave={() => setHoveredAbility((prev) => (prev === ab.slot ? null : prev))}
-                className={`relative w-15 h-15 rounded-lg border transition-all flex flex-col items-center justify-center overflow-hidden cursor-help ${
+                className={`relative w-15 h-15 rounded-lg border transition-all duration-150 flex flex-col items-center justify-center overflow-hidden cursor-help ${
                   isHovered
                     ? 'border-amber-400 bg-[#18223A] scale-[1.04]'
-                    : 'border-slate-700 bg-[#111829]'
+                    : onCd
+                      ? 'border-slate-800 bg-[#0A0F1C]'
+                      : 'border-slate-600/90 bg-[#121A2D]'
                 }`}
               >
                 {onCd && (
@@ -465,11 +667,15 @@ export function GameHud({
                 >
                   <AbilitySvgIcon icon={ab.meta.icon} className="w-5 h-5" />
                 </div>
-                <span className="relative z-10 text-[10px] font-mono-num text-slate-200 font-semibold mt-0.5">
+                <span
+                  className={`relative z-10 text-[10px] font-mono-num font-semibold mt-0.5 ${
+                    onCd ? 'text-amber-300' : 'text-slate-200'
+                  }`}
+                >
                   {onCd ? `${ab.cd.toFixed(1)}s` : ab.extraLabel ?? ab.meta.keyLabel.split(' ')[0]}
                 </span>
 
-                {/* Upgrade rank dots along top edge of ability slot */}
+                {/* Upgrade rank pips along top edge of ability slot */}
                 {rowUpgradesCount > 0 && (
                   <div className="absolute top-1 inset-x-1 flex justify-center gap-0.5 z-10">
                     {Array.from({ length: Math.min(5, rowUpgradesCount) }).map((_, i) => (
@@ -497,13 +703,52 @@ export function GameHud({
           )}
         </div>
 
-        {/* Bottom Right: Extended 2-Tier Cathedral Minimap */}
-        <div className="hidden sm:flex flex-col p-2 rounded-xl bg-[#0A0E1A]/95 border border-slate-700/80">
-          <div className="relative w-[228px] h-[74px] rounded bg-[#070A12] border border-slate-800 overflow-hidden">
+        {/* Bottom Right: Tactical Cathedral Minimap with Live Camera Viewport */}
+        <div className="hidden sm:flex relative relic-panel flex-col p-2 rounded-xl border border-amber-500/30">
+          <RelicCorners />
+          <div className="relative w-[240px] h-[78px] rounded bg-[#070910] border border-slate-800 overflow-hidden">
+            {/* Subtle Faction & Crypt Zone Wash */}
+            <div className="absolute inset-y-0 left-0 w-[34%] bg-sky-500/5" />
+            <div className="absolute inset-y-0 left-[34%] right-[34%] bg-emerald-500/5" />
+            <div className="absolute inset-y-0 right-0 w-[34%] bg-rose-500/5" />
+
             {/* Top Nave + Bottom Lane + Primordial Crypt Pit lines */}
-            <div className="absolute left-[12%] right-[12%] top-[50%] h-[2px] bg-slate-700/70" />
-            <div className="absolute left-0 right-0 top-[82%] h-[2px] bg-slate-600/80" />
-            <div className="absolute left-[42%] right-[42%] top-[88%] h-[3px] bg-emerald-600/60" />
+            <div className="absolute left-[11%] right-[11%] top-[49%] h-[2px] bg-slate-700/75" />
+            <div className="absolute left-0 right-0 top-[82%] h-[2px] bg-slate-600/85" />
+            <div className="absolute left-[41%] right-[41%] top-[89%] h-[3px] bg-emerald-500/60" />
+
+            {/* Subtle Zone Labels */}
+            <span className="absolute left-1.5 top-1 text-[8px] font-mono-num text-slate-500 tracking-wider">
+              NAVE
+            </span>
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-0.5 text-[8px] font-mono-num text-emerald-500/70 tracking-wider">
+              CRYPT
+            </span>
+
+            {/* Jump Pad Markers */}
+            {JUMP_PADS.map((jp, idx) => (
+              <div
+                key={`jp_${idx}`}
+                style={{
+                  left: `${(((jp.x + jp.w * 0.5) / WORLD_W) * 100).toFixed(1)}%`,
+                  top: `${((jp.y / WORLD_H) * 100).toFixed(1)}%`,
+                }}
+                className="absolute -translate-x-1/2 -translate-y-1/2 w-1 h-1 bg-amber-400/55"
+              />
+            ))}
+
+            {/* Live Camera Viewport Box */}
+            {hud.minimapViewport && (
+              <div
+                style={{
+                  left: `${(hud.minimapViewport.x * 100).toFixed(1)}%`,
+                  top: `${(hud.minimapViewport.y * 100).toFixed(1)}%`,
+                  width: `${(hud.minimapViewport.w * 100).toFixed(1)}%`,
+                  height: `${(hud.minimapViewport.h * 100).toFixed(1)}%`,
+                }}
+                className="absolute border border-amber-200/45 bg-amber-200/5 pointer-events-none"
+              />
+            )}
 
             {hud.minimap.map((blip, i) => {
               if (!blip.alive) return null;
