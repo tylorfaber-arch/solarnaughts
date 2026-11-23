@@ -1,0 +1,6 @@
+{
+  "name": "Solarnauts",
+  "description": "A 2D side-scrolling 3v3 battle arena inspired by Awesomenauts, featuring four space mercenaries, drop-pod spawns, two-lane turret combat, and distinct 12-upgrade skill trees.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
