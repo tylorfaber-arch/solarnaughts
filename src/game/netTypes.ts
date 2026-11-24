@@ -56,7 +56,11 @@ export type SimFxEvent =
         | 'vortex'
         | 'cloak'
         | 'orbital'
-        | 'undead';
+        | 'undead'
+        | 'censer'
+        | 'contagion'
+        | 'flare'
+        | 'blink';
       x: number;
       y: number;
       ownerId: string;
@@ -116,6 +120,10 @@ export interface NetHeroSnapshot {
   meltdownTimer: number;
   meltdownMaxTimer: number;
   hookedById: string | null;
+  venomStacks: number;
+  venomTimer: number;
+  burnTimer: number;
+  hasteTimer: number;
   recoilTimer: number;
   walkCycle: number;
   kills: number;
@@ -139,6 +147,8 @@ export interface NetDroidSnapshot {
   facing: 1 | -1;
   hitFlashTimer: number;
   walkCycle: number;
+  venomStacks: number;
+  burnTimer: number;
 }
 
 export interface NetTurretSnapshot {
@@ -232,7 +242,7 @@ export interface NetHazardSnapshot {
   id: string;
   ownerId: string;
   team: Team;
-  kind: 'orbital_smite' | 'singularity';
+  kind: 'orbital_smite' | 'singularity' | 'plague_cloud' | 'solar_flare';
   x: number;
   y: number;
   radius: number;

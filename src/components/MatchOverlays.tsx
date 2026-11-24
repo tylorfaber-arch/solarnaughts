@@ -166,7 +166,7 @@ export function PauseModal({
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#04060D]/80 p-4">
       <div
         className={`relative relic-panel w-full ${
-          pickerOpen ? 'max-w-[660px]' : 'max-w-[460px]'
+          pickerOpen ? 'max-w-[760px]' : 'max-w-[460px]'
         } max-h-[90vh] overflow-y-auto rounded-2xl border border-amber-500/35 p-6 flex flex-col gap-4 transition-all`}
       >
         <RelicCorners />
@@ -203,7 +203,7 @@ export function PauseModal({
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {HERO_LIST.map((hero) => {
                 const isCurrent = hero.id === hud.player.heroId;
                 const isTaken = takenByOtherHumans.has(hero.id);

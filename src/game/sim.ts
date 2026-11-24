@@ -1,4 +1,11 @@
-import { canForgeTalent, computeHeroStats, HERO_LIST, HERO_MAP } from './heroes.ts';
+import {
+  ASCENSION_INFUSIONS,
+  canForgeAscension,
+  canForgeTalent,
+  computeHeroStats,
+  HERO_LIST,
+  HERO_MAP,
+} from './heroes.ts';
 import {
   BASE_ZONES,
   CORE_SPOTS,
@@ -55,14 +62,14 @@ interface WaveTierConfig {
   damage: number;
 }
 
-// Escalating 6-tier waves pace matches to a decisive 15-20 minute finish
+// Escalating 6-tier waves: always cleanly killable by heroes, while applying strong siege pressure to towers & cores
 const WAVE_TIERS: WaveTierConfig[] = [
-  { tier: 1, name: 'Tier I · Initiates', startSec: 0, countPerLane: 1, hp: 120, damage: 12 },
-  { tier: 2, name: 'Tier II · Zealots', startSec: 180, countPerLane: 2, hp: 185, damage: 17 },
-  { tier: 3, name: 'Tier III · Siege Vanguard', startSec: 360, countPerLane: 2, hp: 280, damage: 25 },
-  { tier: 4, name: 'Tier IV · Sanctum Breakers', startSec: 570, countPerLane: 3, hp: 410, damage: 35 },
-  { tier: 5, name: 'Tier V · Void Juggernauts', startSec: 780, countPerLane: 3, hp: 590, damage: 48 },
-  { tier: 6, name: 'Tier VI · Cataclysm Horde', startSec: 960, countPerLane: 4, hp: 840, damage: 68 },
+  { tier: 1, name: 'Tier I · Initiates', startSec: 0, countPerLane: 2, hp: 85, damage: 8 },
+  { tier: 2, name: 'Tier II · Zealots', startSec: 120, countPerLane: 2, hp: 120, damage: 11 },
+  { tier: 3, name: 'Tier III · Siege Vanguard', startSec: 240, countPerLane: 3, hp: 165, damage: 14 },
+  { tier: 4, name: 'Tier IV · Sanctum Breakers', startSec: 390, countPerLane: 3, hp: 215, damage: 18 },
+  { tier: 5, name: 'Tier V · Void Juggernauts', startSec: 540, countPerLane: 3, hp: 270, damage: 22 },
+  { tier: 6, name: 'Tier VI · Cataclysm Horde', startSec: 690, countPerLane: 4, hp: 330, damage: 26 },
 ];
 
 export class ArenaSimulation {
@@ -119,13 +126,13 @@ export class ArenaSimulation {
         chosen = cfg;
       }
     }
-    // Beyond 17 minutes, add extra overtime scaling every minute so games always close out cleanly before 20 min
-    if (this.matchTime > 1020) {
-      const extraMins = Math.floor((this.matchTime - 1020) / 60) + 1;
+    // Beyond 12 minutes, add modest capped overtime scaling so creeps stay killable while siege escalation closes the match
+    if (this.matchTime > 720) {
+      const extraSteps = Math.min(5, Math.floor((this.matchTime - 720) / 45) + 1);
       return {
         ...chosen,
-        hp: chosen.hp + extraMins * 160,
-        damage: chosen.damage + extraMins * 14,
+        hp: chosen.hp + extraSteps * 30,
+        damage: chosen.damage + extraSteps * 2,
       };
     }
     return chosen;
@@ -158,7 +165,7 @@ export class ArenaSimulation {
 
     this.turrets = INITIAL_TURRET_SPOTS.map((sp) => {
       const isInner = sp.tier === 'inner';
-      const maxHp = isInner ? 3000 : 2200;
+      const maxHp = isInner ? 1950 : 1450;
       return {
         id: sp.id,
         team: sp.team,
@@ -187,8 +194,8 @@ export class ArenaSimulation {
         y: CORE_SPOTS.blue.y,
         w: 118,
         h: 164,
-        hp: 4800,
-        maxHp: 4800,
+        hp: 3100,
+        maxHp: 3100,
         shielded: true,
         hitFlashTimer: 0,
         pulsePhase: 0,
@@ -200,8 +207,8 @@ export class ArenaSimulation {
         y: CORE_SPOTS.red.y,
         w: 118,
         h: 164,
-        hp: 4800,
-        maxHp: 4800,
+        hp: 3100,
+        maxHp: 3100,
         shielded: true,
         hitFlashTimer: 0,
         pulsePhase: 0,
@@ -461,6 +468,93 @@ export class ArenaSimulation {
   public buyUpgradeForHero(heroEntityId: string, upgradeId: string): boolean {
     const hero = this.heroes.find((h) => h.id === heroEntityId);
     if (!hero) return false;
+
+    // Repeatable Endgame Ascension Reliquary Infusions (Max-Gold Sinks)
+    const infusion = ASCENSION_INFUSIONS.find((inf) => inf.id === upgradeId);
+    if (infusion) {
+      const check = canForgeAscension(hero.upgrades, hero.heroId, infusion, hero.solar);
+      if (!check.allowed) return false;
+
+      const prevStats = computeHeroStats(hero.heroId, hero.upgrades, hero.bonusMaxHp);
+      hero.solar -= check.cost;
+      hero.totalSolarSpent += check.cost;
+      hero.upgrades[infusion.id] = check.stacks + 1;
+      const nextStats = computeHeroStats(hero.heroId, hero.upgrades, hero.bonusMaxHp);
+      const hpGain = Math.max(0, nextStats.maxHp - prevStats.maxHp);
+      hero.maxHp = nextStats.maxHp;
+      hero.hp = Math.min(hero.maxHp, hero.hp + hpGain);
+
+      // Immediate high-impact bonus on Ascension forge
+      if (infusion.id === 'asc_wrath') {
+        hero.shield = Math.min(hero.maxHp * 0.75, hero.shield + 65);
+        this.emitFx({ kind: 'ring', x: hero.x, y: hero.y, radius: 92, color: '#FBBF24' });
+      } else if (infusion.id === 'asc_titan') {
+        hero.hp = Math.min(hero.maxHp, hero.hp + 140);
+        this.emitFx({ kind: 'ring', x: hero.x, y: hero.y, radius: 92, color: '#34D399' });
+      } else if (infusion.id === 'asc_alacrity') {
+        hero.skill1Cd = Math.max(0, hero.skill1Cd - 1.5);
+        hero.skill2Cd = Math.max(0, hero.skill2Cd - 1.5);
+        this.emitFx({ kind: 'ring', x: hero.x, y: hero.y, radius: 92, color: '#38BDF8' });
+      } else if (infusion.id === 'asc_siege') {
+        const baseX = hero.team === 'blue' ? 660 : WORLD_W - 660;
+        const dir: 1 | -1 = hero.team === 'blue' ? 1 : -1;
+        const lanes: Array<'top' | 'bot'> = ['top', 'bot'];
+        for (const lane of lanes) {
+          const spawnY = lane === 'top' ? 548 : 932;
+          this.droids.push({
+            id: nextId(`droid_${hero.team}`),
+            team: hero.team,
+            lane,
+            tier: 6,
+            x: baseX + dir * (lane === 'top' ? 48 : 18),
+            y: spawnY,
+            vx: 0,
+            vy: 0,
+            w: 32,
+            h: 38,
+            hp: 295,
+            maxHp: 295,
+            damage: 28,
+            attackCd: 0.25,
+            hitFlashTimer: 0,
+            walkCycle: Math.random() * 6,
+            grounded: true,
+            facing: dir,
+            slowTimer: 0,
+            stunTimer: 0,
+            venomStacks: 0,
+            venomTimer: 0,
+            venomDps: 0,
+            venomOwnerId: null,
+            venomTickTimer: 0.4,
+            burnTimer: 0,
+            burnDps: 0,
+            burnOwnerId: null,
+            burnTickTimer: 0.4,
+          });
+        }
+        this.emitFx({ kind: 'ring', x: hero.x, y: hero.y, radius: 112, color: '#F59E0B' });
+        this.pushBanner(
+          'SIEGEBREAKERS DEPLOYED!',
+          `${hero.name} summoned Elite Tier-6 Crusaders in Top & Bottom Lanes`,
+          hero.team === 'blue' ? 'blue' : 'red',
+          3.4
+        );
+      }
+
+      this.emitFx({ kind: 'upgrade', x: hero.x, y: hero.y, heroEntityId: hero.id });
+      this.emitFx({
+        kind: 'text',
+        x: hero.x,
+        y: hero.y - 46,
+        text: `${infusion.name.toUpperCase()} ×${check.stacks + 1}!`,
+        color: '#FDE047',
+        scale: 1.12,
+        targetId: hero.id,
+      });
+      return true;
+    }
+
     const def = HERO_MAP[hero.heroId];
     const node = def.upgrades.find((u) => u.id === upgradeId);
     if (!node) return false;
@@ -556,6 +650,10 @@ export class ArenaSimulation {
         meltdownTimer: Math.round(h.meltdownTimer * 100) / 100,
         meltdownMaxTimer: h.meltdownMaxTimer,
         hookedById: h.hookedById,
+        venomStacks: h.venomStacks,
+        venomTimer: Math.round(h.venomTimer * 100) / 100,
+        burnTimer: Math.round(h.burnTimer * 100) / 100,
+        hasteTimer: Math.round(h.hasteTimer * 100) / 100,
         recoilTimer: Math.round(h.recoilTimer * 100) / 100,
         walkCycle: Math.round(h.walkCycle * 100) / 100,
         kills: h.kills,
@@ -578,6 +676,8 @@ export class ArenaSimulation {
         facing: d.facing,
         hitFlashTimer: Math.round(d.hitFlashTimer * 100) / 100,
         walkCycle: Math.round(d.walkCycle * 10) / 10,
+        venomStacks: d.venomStacks,
+        burnTimer: Math.round(d.burnTimer * 100) / 100,
       })),
       turrets: this.turrets.map((t) => ({
         id: t.id,
@@ -699,7 +799,9 @@ export class ArenaSimulation {
       this.waveTierName = waveCfg.name;
       this.pushBanner(
         `CREEP ESCALATION · ${waveCfg.name.toUpperCase()}`,
-        `${waveCfg.countPerLane} troopers per lane (${waveCfg.hp} HP) surging forward!`,
+        waveCfg.tier >= 6
+          ? `${waveCfg.countPerLane} Cataclysm troopers per lane — backdoor shields falling!`
+          : `${waveCfg.countPerLane} troopers per lane (${waveCfg.hp} HP) surging forward!`,
         waveCfg.tier >= 5 ? 'red' : 'gold',
         3.5
       );
@@ -707,7 +809,7 @@ export class ArenaSimulation {
 
     this.waveTimer -= dt;
     if (this.waveTimer <= 0) {
-      this.waveTimer = 16.0;
+      this.waveTimer = this.matchTime >= 540 ? 11.0 : this.matchTime >= 240 ? 12.5 : 14.0;
       this.spawnDroidWave(waveCfg);
     }
 
@@ -791,6 +893,16 @@ export class ArenaSimulation {
       meltdownTimer: 0,
       meltdownMaxTimer: 0,
       hookedById: null,
+      venomStacks: 0,
+      venomTimer: 0,
+      venomDps: 0,
+      venomOwnerId: null,
+      venomTickTimer: 0.4,
+      burnTimer: 0,
+      burnDps: 0,
+      burnOwnerId: null,
+      burnTickTimer: 0.4,
+      hasteTimer: 0,
       squashX: 1,
       squashY: 1,
       walkCycle: 0,
@@ -832,6 +944,14 @@ export class ArenaSimulation {
     h.cloakCritReady = false;
     h.meltdownTimer = 0;
     h.hookedById = null;
+    h.venomStacks = 0;
+    h.venomTimer = 0;
+    h.venomDps = 0;
+    h.venomOwnerId = null;
+    h.burnTimer = 0;
+    h.burnDps = 0;
+    h.burnOwnerId = null;
+    h.hasteTimer = 0;
     const isHuman = this.humanIds.has(h.id);
     h.dropPodSolars = isHuman
       ? Array.from({ length: 7 }, (_, i) => ({
@@ -871,8 +991,8 @@ export class ArenaSimulation {
 
   private spawnDroidWave(cfg: WaveTierConfig): void {
     const lanes: Array<'top' | 'bot'> = ['top', 'bot'];
-    // Hard cap total droids to prevent performance bloat in extreme stalemates
-    if (this.droids.length > 42) return;
+    // Hard cap total droids to prevent performance bloat while allowing strong late-game pushes
+    if (this.droids.length > 52) return;
 
     for (const team of ['blue', 'red'] as Team[]) {
       const baseX = team === 'blue' ? 660 : WORLD_W - 660;
@@ -901,6 +1021,15 @@ export class ArenaSimulation {
             facing: dir as 1 | -1,
             slowTimer: 0,
             stunTimer: 0,
+            venomStacks: 0,
+            venomTimer: 0,
+            venomDps: 0,
+            venomOwnerId: null,
+            venomTickTimer: 0.4,
+            burnTimer: 0,
+            burnDps: 0,
+            burnOwnerId: null,
+            burnTickTimer: 0.4,
           });
         }
       }
@@ -939,6 +1068,52 @@ export class ArenaSimulation {
       h.cloakTimer = Math.max(0, h.cloakTimer - dt);
       if (h.cloakTimer <= 0) {
         h.cloakCritReady = false;
+      }
+    }
+    if (h.hasteTimer > 0) {
+      h.hasteTimer = Math.max(0, h.hasteTimer - dt);
+    }
+
+    // Active Venom DoT (stacking 1..5)
+    if (h.venomTimer > 0 && h.venomStacks > 0 && !h.inDropPod) {
+      h.venomTimer -= dt;
+      h.venomTickTimer -= dt;
+      if (h.venomTickTimer <= 0) {
+        h.venomTickTimer = 0.4;
+        const venomOwner = h.venomOwnerId ? this.heroes.find((o) => o.id === h.venomOwnerId) ?? null : null;
+        const tickDmg = Math.max(2, h.venomDps * h.venomStacks * 0.4);
+        this.applyDamageToHero(h, tickDmg, venomOwner);
+        if (venomOwner && venomOwner.alive) {
+          const vStats = computeHeroStats(venomOwner.heroId, venomOwner.upgrades, venomOwner.bonusMaxHp);
+          if (vStats.capstones['vp_u2']) {
+            this.healHero(venomOwner, tickDmg * 0.12);
+          }
+        }
+        if (!h.alive) return;
+      }
+      if (h.venomTimer <= 0) {
+        h.venomStacks = 0;
+        h.venomTimer = 0;
+        h.venomDps = 0;
+        h.venomOwnerId = null;
+      }
+    }
+
+    // Active Solar Burn DoT
+    if (h.burnTimer > 0 && !h.inDropPod) {
+      h.burnTimer -= dt;
+      h.burnTickTimer -= dt;
+      if (h.burnTickTimer <= 0) {
+        h.burnTickTimer = 0.4;
+        const burnOwner = h.burnOwnerId ? this.heroes.find((o) => o.id === h.burnOwnerId) ?? null : null;
+        const tickDmg = Math.max(2, h.burnDps * 0.4);
+        this.applyDamageToHero(h, tickDmg, burnOwner);
+        if (!h.alive) return;
+      }
+      if (h.burnTimer <= 0) {
+        h.burnTimer = 0;
+        h.burnDps = 0;
+        h.burnOwnerId = null;
       }
     }
 
@@ -1232,7 +1407,8 @@ export class ArenaSimulation {
       const meltMult = h.meltdownTimer > 0 ? stats.skill2SpeedMult : 1;
       const cloakMult = h.cloakTimer > 0 ? stats.skill2SpeedMult : 1;
       const rotMult = h.rotTimer > 0 ? stats.skill2SpeedMult : 1;
-      const targetVx = moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult;
+      const hasteMult = h.hasteTimer > 0 ? stats.skill2SpeedMult : 1;
+      const targetVx = moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult * hasteMult;
       const accel = h.grounded ? 2600 : 1750;
       if (moveDir !== 0) {
         h.vx += Math.sign(targetVx - h.vx) * Math.min(Math.abs(targetVx - h.vx), accel * dt);
@@ -1327,7 +1503,7 @@ export class ArenaSimulation {
       this.castSkill1(h, stats, aimWorldX, aimWorldY);
     }
     if (wantSkill2 && h.skill2Cd <= 0 && h.dashTimer <= 0) {
-      this.castSkill2(h, stats);
+      this.castSkill2(h, stats, aimWorldX, aimWorldY);
     }
   }
 
@@ -1395,7 +1571,9 @@ export class ArenaSimulation {
   }
 
   private castPrimary(h: HeroEntity, stats: ReturnType<typeof computeHeroStats>): void {
-    h.primaryCd = stats.primaryCooldown;
+    const hasteFireMult =
+      h.heroId === 'vale' && h.hasteTimer > 0 ? (stats.capstones['vl_e2'] ? 1.55 : 1.4) : 1;
+    h.primaryCd = stats.primaryCooldown / hasteFireMult;
     h.recoilTimer = 0.1;
     h.primaryShotCounter += 1;
     const cos = Math.cos(h.aimAngle);
@@ -1676,6 +1854,69 @@ export class ArenaSimulation {
         color: '#2DD4BF',
         lifestealRatio: stats.lifestealRatio,
       });
+    } else if (h.heroId === 'vespra') {
+      this.projectiles.push({
+        id: nextId('venom'),
+        ownerId: h.id,
+        team: h.team,
+        kind: 'venom_dart',
+        x: spawnX,
+        y: spawnY,
+        vx: cos * stats.primaryProjectileSpeed,
+        vy: sin * stats.primaryProjectileSpeed,
+        radius: 6.5,
+        damage: stats.primaryDamage,
+        healAmount: 0,
+        healSolarBonus: 0,
+        splashRadius: 0,
+        gravity: 0,
+        bouncesLeft: 0,
+        pierce: stats.primaryPierce,
+        hitIds: new Set<string>(),
+        slowDuration: stats.capstones['vp_p3'] ? 0.7 : 0,
+        stunDuration: 0,
+        life: stats.primaryRange / stats.primaryProjectileSpeed,
+        maxLife: stats.primaryRange / stats.primaryProjectileSpeed,
+        color: '#84CC16',
+        lifestealRatio: 0,
+        dotKind: 'venom',
+        dotDps: stats.primaryDotDps,
+        dotDuration: stats.primaryDotDuration,
+      });
+    } else if (h.heroId === 'vale') {
+      const prismFork = Boolean(stats.capstones['vl_p3'] && h.primaryShotCounter % 3 === 0);
+      const offsets = prismFork ? [-0.075, 0.075] : [0];
+      for (const off of offsets) {
+        const a = h.aimAngle + off;
+        this.projectiles.push({
+          id: nextId('prism'),
+          ownerId: h.id,
+          team: h.team,
+          kind: 'prism_lance',
+          x: spawnX,
+          y: spawnY,
+          vx: Math.cos(a) * stats.primaryProjectileSpeed,
+          vy: Math.sin(a) * stats.primaryProjectileSpeed,
+          radius: prismFork ? 7.5 : 6.5,
+          damage: prismFork ? Math.round(stats.primaryDamage * 0.78) : stats.primaryDamage,
+          healAmount: 0,
+          healSolarBonus: 0,
+          splashRadius: 0,
+          gravity: 0,
+          bouncesLeft: 0,
+          pierce: stats.primaryPierce,
+          hitIds: new Set<string>(),
+          slowDuration: 0,
+          stunDuration: 0,
+          life: stats.primaryRange / stats.primaryProjectileSpeed,
+          maxLife: stats.primaryRange / stats.primaryProjectileSpeed,
+          color: h.hasteTimer > 0 ? '#38BDF8' : '#FBBF24',
+          lifestealRatio: stats.lifestealRatio,
+          dotKind: 'burn',
+          dotDps: stats.primaryDotDps,
+          dotDuration: stats.primaryDotDuration,
+        });
+      }
     }
   }
 
@@ -1952,10 +2193,80 @@ export class ArenaSimulation {
         stunDuration: stats.skill1Stun,
       });
       this.emitFx({ kind: 'ability', tag: 'orbital', x: tx, y: ty, ownerId: h.id });
+    } else if (h.heroId === 'vespra') {
+      // Miasma Censer: lobbed alchemical flask that shatters into a lingering toxic cloud
+      this.projectiles.push({
+        id: nextId('censer'),
+        ownerId: h.id,
+        team: h.team,
+        kind: 'censer_bomb',
+        x: h.x + cos * 20,
+        y: h.y - 6,
+        vx: cos * 540,
+        vy: sin * 540 - 175,
+        radius: 10,
+        damage: stats.skill1Damage,
+        healAmount: stats.skill1Heal,
+        healSolarBonus: 0,
+        splashRadius: stats.skill1Radius,
+        gravity: 840,
+        bouncesLeft: 0,
+        pierce: false,
+        hitIds: new Set<string>(),
+        slowDuration: stats.skill1Duration, // carry cloud duration
+        stunDuration: stats.skill1Stun,
+        life: 0.92,
+        maxLife: 0.92,
+        color: '#84CC16',
+        lifestealRatio: 0,
+        dotKind: 'venom',
+        dotDps: stats.primaryDotDps,
+        dotDuration: stats.primaryDotDuration,
+      });
+      this.emitFx({ kind: 'ability', tag: 'censer', x: h.x, y: h.y, ownerId: h.id });
+    } else if (h.heroId === 'vale') {
+      // Sundial Flare: spinning solar disc that erupts into a scorching ring damaging heroes, droids & towers
+      if (stats.skill1ShieldAfter > 0) {
+        h.shield = Math.max(h.shield, stats.skill1ShieldAfter);
+      }
+      this.projectiles.push({
+        id: nextId('sdisc'),
+        ownerId: h.id,
+        team: h.team,
+        kind: 'solar_disc',
+        x: h.x + cos * 22,
+        y: h.y + sin * 18,
+        vx: cos * 720,
+        vy: sin * 720,
+        radius: 11,
+        damage: stats.skill1Damage,
+        healAmount: 0,
+        healSolarBonus: 0,
+        splashRadius: stats.skill1Radius,
+        gravity: 0,
+        bouncesLeft: 0,
+        pierce: false,
+        hitIds: new Set<string>(),
+        slowDuration: stats.skill1Duration, // carry flare duration
+        stunDuration: stats.skill1Stun,
+        life: 0.62,
+        maxLife: 0.62,
+        color: '#F59E0B',
+        lifestealRatio: 0,
+        dotKind: 'burn',
+        dotDps: stats.primaryDotDps,
+        dotDuration: stats.primaryDotDuration,
+      });
+      this.emitFx({ kind: 'ability', tag: 'flare', x: h.x, y: h.y, ownerId: h.id });
     }
   }
 
-  private castSkill2(h: HeroEntity, stats: ReturnType<typeof computeHeroStats>): void {
+  private castSkill2(
+    h: HeroEntity,
+    stats: ReturnType<typeof computeHeroStats>,
+    aimWorldX = h.x + Math.cos(h.aimAngle) * 280,
+    aimWorldY = h.y + Math.sin(h.aimAngle) * 280
+  ): void {
     h.skill2Cd = stats.skill2Cooldown;
 
     if (h.heroId === 'marrow') {
@@ -2182,10 +2493,169 @@ export class ArenaSimulation {
           facing: h.facing,
           slowTimer: 0,
           stunTimer: 0,
+          venomStacks: 0,
+          venomTimer: 0,
+          venomDps: 0,
+          venomOwnerId: null,
+          venomTickTimer: 0.4,
+          burnTimer: 0,
+          burnDps: 0,
+          burnOwnerId: null,
+          burnTickTimer: 0.4,
         });
       }
       this.emitFx({ kind: 'ring', x: h.x, y: h.y, radius: 74, color: '#2DD4BF' });
       this.emitFx({ kind: 'ability', tag: 'undead', x: h.x, y: h.y, ownerId: h.id });
+    } else if (h.heroId === 'vespra') {
+      // Contagion Detonation: erupts all Venom stacks nearby, spreads to adjacent enemies, and heals Vespra!
+      if (stats.skill2SummonHp > 0) {
+        h.shield = Math.max(h.shield, stats.skill2SummonHp);
+      }
+      if (stats.capstones['vp_e2']) {
+        for (const ally of this.heroes) {
+          if (!ally.alive || ally.inDropPod || ally.team !== h.team || ally.id === h.id) continue;
+          if (Math.hypot(ally.x - h.x, ally.y - h.y) <= stats.skill2Radius) {
+            this.healHero(ally, 45);
+          }
+        }
+      }
+
+      let totalStacksDetonated = 0;
+      const spreadOrigins: Array<{ x: number; y: number; stacks: number }> = [];
+
+      for (const other of this.heroes) {
+        if (!other.alive || other.inDropPod || other.team === h.team) continue;
+        if (Math.hypot(other.x - h.x, other.y - h.y) <= stats.skill2Radius) {
+          const stacks = other.venomStacks;
+          if (stacks > 0) {
+            totalStacksDetonated += stacks;
+            spreadOrigins.push({ x: other.x, y: other.y, stacks: Math.min(3, stacks) });
+            const burst = stats.skill2Damage * stacks;
+            this.applyDamageToHero(other, burst, h);
+            other.slowTimer = Math.max(other.slowTimer, 0.9);
+            this.emitFx({
+              kind: 'text',
+              x: other.x,
+              y: other.y - 44,
+              text: `CONTAGION ×${stacks}! (-${Math.round(burst)})`,
+              color: '#A3E635',
+              scale: 1.15,
+            });
+            this.emitFx({ kind: 'ring', x: other.x, y: other.y, radius: 76, color: '#84CC16' });
+            if (!stats.capstones['vp_e1']) {
+              other.venomStacks = 0;
+              other.venomTimer = 0;
+            } else {
+              other.venomTimer = Math.max(other.venomTimer, stats.primaryDotDuration);
+            }
+          } else {
+            // Even unpoisoned enemies in the pandemic wave take light blight + 1 Venom stack
+            this.applyDamageToHero(other, Math.round(stats.skill2Damage * 0.65), h);
+            this.applyVenomToHero(other, h, 1, stats.primaryDotDps, stats.primaryDotDuration);
+          }
+        }
+      }
+
+      for (const d of this.droids) {
+        if (d.team === h.team || d.hp <= 0) continue;
+        if (Math.hypot(d.x - h.x, d.y - h.y) <= stats.skill2Radius) {
+          const stacks = d.venomStacks;
+          if (stacks > 0) {
+            totalStacksDetonated += Math.min(2, stacks);
+            spreadOrigins.push({ x: d.x, y: d.y, stacks: Math.min(2, stacks) });
+            this.damageDroid(d, stats.skill2Damage * stacks, h);
+            if (!stats.capstones['vp_e1']) {
+              d.venomStacks = 0;
+              d.venomTimer = 0;
+            }
+          } else {
+            this.damageDroid(d, Math.round(stats.skill2Damage * 0.6), h);
+            this.applyVenomToDroid(d, h, 1, stats.primaryDotDps, stats.primaryDotDuration);
+          }
+        }
+      }
+
+      // Spread Contagion to nearby enemies around every detonated carrier
+      for (const orig of spreadOrigins) {
+        for (const other of this.heroes) {
+          if (!other.alive || other.inDropPod || other.team === h.team) continue;
+          if (Math.hypot(other.x - orig.x, other.y - orig.y) <= 175) {
+            this.applyVenomToHero(other, h, orig.stacks, stats.primaryDotDps, stats.primaryDotDuration);
+          }
+        }
+        for (const d of this.droids) {
+          if (d.team === h.team || d.hp <= 0) continue;
+          if (Math.hypot(d.x - orig.x, d.y - orig.y) <= 165) {
+            this.applyVenomToDroid(d, h, orig.stacks, stats.primaryDotDps, stats.primaryDotDuration);
+          }
+        }
+      }
+
+      if (totalStacksDetonated > 0) {
+        this.healHero(h, Math.min(180, totalStacksDetonated * stats.skill2HealAlly));
+      }
+      this.emitFx({ kind: 'ring', x: h.x, y: h.y, radius: stats.skill2Radius, color: '#84CC16' });
+      this.emitFx({ kind: 'ability', tag: 'contagion', x: h.x, y: h.y, ownerId: h.id });
+    } else if (h.heroId === 'vale') {
+      // Chrono-Blink: instant cursor teleport leaving an exploding Solar Afterimage at origin!
+      const originX = h.x;
+      const originY = h.y;
+      const maxBlink = stats.capstones['vl_e3'] ? 390 : 310;
+      const dx = aimWorldX - originX;
+      const dy = aimWorldY - originY;
+      const dist = Math.hypot(dx, dy);
+      const blinkDist = Math.min(maxBlink, Math.max(90, dist));
+      const ang = dist > 5 ? Math.atan2(dy, dx) : h.aimAngle;
+
+      let targetX = Math.max(58, Math.min(WORLD_W - 58, originX + Math.cos(ang) * blinkDist));
+      let targetY = Math.max(85, Math.min(935, originY + Math.sin(ang) * blinkDist));
+
+      // Prevent blinking inside solid stone slabs
+      for (const p of PLATFORMS) {
+        if (p.oneWay) continue;
+        if (
+          targetX + h.w * 0.45 > p.x &&
+          targetX - h.w * 0.45 < p.x + p.w &&
+          targetY + h.h * 0.45 > p.y &&
+          targetY - h.h * 0.45 < p.y + p.h
+        ) {
+          targetY = p.y - h.h / 2 - 2;
+        }
+      }
+
+      // Detonate Solar Afterimage at origin
+      const afterStun = stats.capstones['vl_e1'] ? 0.65 : 0;
+      this.dealAreaDamage(h, originX, originY, stats.skill2Radius, stats.skill2Damage, 0.5, afterStun, '#F59E0B', true);
+      if (stats.capstones['vl_e1']) {
+        for (const other of this.heroes) {
+          if (!other.alive || other.inDropPod || other.team === h.team) continue;
+          if (Math.hypot(other.x - originX, other.y - originY) <= stats.skill2Radius + 14) {
+            this.applyBurnToHero(other, h, stats.primaryDotDps, stats.primaryDotDuration);
+          }
+        }
+      }
+      this.emitFx({
+        kind: 'explosion',
+        x: originX,
+        y: originY,
+        radius: stats.skill2Radius,
+        color: '#F59E0B',
+        heavy: false,
+        ownerId: h.id,
+      });
+
+      h.x = targetX;
+      h.y = targetY;
+      h.vx = Math.cos(ang) * 180;
+      h.vy = Math.min(0, Math.sin(ang) * 120 - 60);
+      h.grounded = false;
+      h.invulnTimer = Math.max(h.invulnTimer, 0.24);
+      h.hasteTimer = stats.skill2Duration;
+      h.shield = Math.max(h.shield, stats.skill2SummonHp);
+      h.squashX = 0.78;
+      h.squashY = 1.28;
+      this.emitFx({ kind: 'ring', x: targetX, y: targetY, radius: 64, color: '#38BDF8' });
+      this.emitFx({ kind: 'ability', tag: 'blink', x: targetX, y: targetY, ownerId: h.id });
     }
   }
 
@@ -2401,6 +2871,15 @@ export class ArenaSimulation {
               facing: owner.team === 'blue' ? 1 : -1,
               slowTimer: 0,
               stunTimer: 0,
+              venomStacks: 0,
+              venomTimer: 0,
+              venomDps: 0,
+              venomOwnerId: null,
+              venomTickTimer: 0.4,
+              burnTimer: 0,
+              burnDps: 0,
+              burnOwnerId: null,
+              burnTickTimer: 0.4,
             });
           }
           this.emitFx({
@@ -2463,6 +2942,80 @@ export class ArenaSimulation {
           }
           this.hazards.splice(i, 1);
         }
+      } else if (hz.kind === 'plague_cloud') {
+        hz.timer -= dt;
+        hz.tickTimer -= dt;
+        if (hz.tickTimer <= 0) {
+          hz.tickTimer = 0.45;
+          const stacksPerPulse = ownerStats?.capstones['vp_q1'] ? 2 : 1;
+          const slowDur = ownerStats ? ownerStats.skill1Slow : 0.7;
+          const dotDps = ownerStats ? ownerStats.primaryDotDps : 8;
+          const dotDur = ownerStats ? ownerStats.primaryDotDuration : 4.0;
+
+          for (const other of this.heroes) {
+            if (!other.alive || other.inDropPod) continue;
+            if (Math.hypot(other.x - hz.x, other.y - hz.y) <= hz.radius + 14) {
+              if (other.team !== hz.team) {
+                this.applyDamageToHero(other, hz.damage, owner);
+                other.slowTimer = Math.max(other.slowTimer, slowDur);
+                if (owner) {
+                  this.applyVenomToHero(other, owner, stacksPerPulse, dotDps, dotDur);
+                }
+              } else if (ownerStats && ownerStats.skill1Heal > 0) {
+                this.healHero(other, ownerStats.skill1Heal);
+              }
+            }
+          }
+          for (const d of this.droids) {
+            if (d.team === hz.team || d.hp <= 0) continue;
+            if (Math.hypot(d.x - hz.x, d.y - hz.y) <= hz.radius + 12) {
+              this.damageDroid(d, hz.damage, owner);
+              d.slowTimer = Math.max(d.slowTimer, slowDur);
+              if (owner) {
+                this.applyVenomToDroid(d, owner, stacksPerPulse, dotDps, dotDur);
+              }
+            }
+          }
+          if (owner) {
+            for (const c of this.creeps) {
+              if (!c.alive) continue;
+              if (Math.hypot(c.x - hz.x, c.y - hz.y) <= hz.radius + 14) {
+                this.damageCreep(c, hz.damage, owner);
+              }
+            }
+          }
+        }
+        if (hz.timer <= 0) {
+          this.hazards.splice(i, 1);
+        }
+      } else if (hz.kind === 'solar_flare') {
+        hz.timer -= dt;
+        hz.tickTimer -= dt;
+        if (hz.tickTimer <= 0) {
+          hz.tickTimer = 0.42;
+          const siegeBonus = ownerStats?.capstones['vl_q1'] ? 1.35 : 1.0;
+          const slowDur = ownerStats ? ownerStats.skill1Slow : 0.4;
+          const burnDps = ownerStats ? ownerStats.primaryDotDps : 11;
+          const burnDur = ownerStats ? ownerStats.primaryDotDuration : 3.0;
+          this.dealAreaDamage(owner, hz.x, hz.y, hz.radius, hz.damage, slowDur, 0, '#F59E0B', true, siegeBonus);
+          if (owner) {
+            for (const other of this.heroes) {
+              if (!other.alive || other.inDropPod || other.team === hz.team) continue;
+              if (Math.hypot(other.x - hz.x, other.y - hz.y) <= hz.radius + 14) {
+                this.applyBurnToHero(other, owner, burnDps, burnDur);
+              }
+            }
+            for (const d of this.droids) {
+              if (d.team === hz.team || d.hp <= 0) continue;
+              if (Math.hypot(d.x - hz.x, d.y - hz.y) <= hz.radius + 12) {
+                this.applyBurnToDroid(d, owner, burnDps, burnDur);
+              }
+            }
+          }
+        }
+        if (hz.timer <= 0) {
+          this.hazards.splice(i, 1);
+        }
       }
     }
   }
@@ -2478,6 +3031,47 @@ export class ArenaSimulation {
       d.attackCd = Math.max(0, d.attackCd - dt);
       d.slowTimer = Math.max(0, d.slowTimer - dt);
       d.stunTimer = Math.max(0, d.stunTimer - dt);
+
+      // Droid Venom & Solar Burn DoT ticks
+      if (d.venomTimer > 0 && d.venomStacks > 0) {
+        d.venomTimer -= dt;
+        d.venomTickTimer -= dt;
+        if (d.venomTickTimer <= 0) {
+          d.venomTickTimer = 0.4;
+          const venomOwner = d.venomOwnerId ? this.heroes.find((o) => o.id === d.venomOwnerId) ?? null : null;
+          this.damageDroid(d, Math.max(2, d.venomDps * d.venomStacks * 0.4), venomOwner);
+          if (d.hp <= 0) {
+            if (venomOwner) {
+              const vStats = computeHeroStats(venomOwner.heroId, venomOwner.upgrades, venomOwner.bonusMaxHp);
+              if (vStats.capstones['vp_u3']) {
+                this.grantSolar(venomOwner, 4, d.x, d.y - 16);
+              }
+            }
+            this.droids.splice(i, 1);
+            continue;
+          }
+        }
+        if (d.venomTimer <= 0) {
+          d.venomStacks = 0;
+          d.venomTimer = 0;
+        }
+      }
+      if (d.burnTimer > 0) {
+        d.burnTimer -= dt;
+        d.burnTickTimer -= dt;
+        if (d.burnTickTimer <= 0) {
+          d.burnTickTimer = 0.4;
+          const burnOwner = d.burnOwnerId ? this.heroes.find((o) => o.id === d.burnOwnerId) ?? null : null;
+          this.damageDroid(d, Math.max(2, d.burnDps * 0.4), burnOwner);
+          if (d.hp <= 0) {
+            this.droids.splice(i, 1);
+            continue;
+          }
+        }
+        if (d.burnTimer <= 0) {
+          d.burnTimer = 0;
+        }
+      }
 
       const dir: 1 | -1 = d.team === 'blue' ? 1 : -1;
       d.facing = dir;
@@ -2649,7 +3243,7 @@ export class ArenaSimulation {
             vx: Math.cos(t.aimAngle) * 690,
             vy: Math.sin(t.aimAngle) * 690,
             radius: 7,
-            damage: t.tier === 'inner' ? 46 : 36,
+            damage: t.tier === 'inner' ? 38 : 30,
             healAmount: 0,
             healSolarBonus: 0,
             splashRadius: 0,
@@ -2902,6 +3496,10 @@ export class ArenaSimulation {
       if (p.life <= 0 || p.x < 10 || p.x > WORLD_W - 10 || p.y > WORLD_H + 40) {
         if (p.kind === 'singularity_orb') {
           this.spawnSingularity(p);
+        } else if (p.kind === 'censer_bomb') {
+          this.spawnPlagueCloud(p, owner);
+        } else if (p.kind === 'solar_disc') {
+          this.spawnSolarFlare(p, owner);
         } else if (p.kind === 'soul_orb' && ownerStats?.capstones['cd_p1']) {
           this.dealAreaDamage(owner, p.x, p.y, 75, Math.round(p.damage * 1.1), p.slowDuration, 0, '#2DD4BF', false);
           this.emitFx({ kind: 'explosion', x: p.x, y: p.y, radius: 75, color: '#2DD4BF', heavy: false, ownerId: p.ownerId });
@@ -2937,6 +3535,10 @@ export class ArenaSimulation {
       if (hitSolid && p.kind !== 'cleaver' && p.kind !== 'soul_orb' && p.kind !== 'biobeam') {
         if (p.kind === 'singularity_orb') {
           this.spawnSingularity(p);
+        } else if (p.kind === 'censer_bomb') {
+          this.spawnPlagueCloud(p, owner);
+        } else if (p.kind === 'solar_disc') {
+          this.spawnSolarFlare(p, owner);
         } else if (p.splashRadius > 0) {
           this.detonateProjectile(p, owner);
         }
@@ -2996,12 +3598,36 @@ export class ArenaSimulation {
             consumed = true;
             break;
           }
+          if (p.kind === 'censer_bomb') {
+            this.spawnPlagueCloud(p, owner);
+            consumed = true;
+            break;
+          }
+          if (p.kind === 'solar_disc') {
+            this.spawnSolarFlare(p, owner);
+            consumed = true;
+            break;
+          }
           if (p.splashRadius > 0) {
             this.detonateProjectile(p, owner);
             consumed = true;
             break;
           }
-          this.applyDamageToHero(h, p.damage, owner);
+          let extraHitDmg = 0;
+          if (p.kind === 'venom_dart' && ownerStats?.capstones['vp_p3'] && h.venomStacks >= 5) {
+            extraHitDmg += 16;
+          }
+          if (p.kind === 'prism_lance' && ownerStats?.capstones['vl_p1'] && h.burnTimer > 0) {
+            extraHitDmg += 14;
+          }
+          const heroTargetMult = p.kind === 'droid_shot' ? 0.45 : 1;
+          this.applyDamageToHero(h, (p.damage + extraHitDmg) * heroTargetMult, owner);
+          if (owner && p.dotKind === 'venom' && p.dotDps && p.dotDuration) {
+            const stacks = ownerStats?.capstones['vp_p1'] ? 2 : 1;
+            this.applyVenomToHero(h, owner, stacks, p.dotDps, p.dotDuration);
+          } else if (owner && p.dotKind === 'burn' && p.dotDps && p.dotDuration) {
+            this.applyBurnToHero(h, owner, p.dotDps, p.dotDuration);
+          }
           if (p.slowDuration > 0) h.slowTimer = Math.max(h.slowTimer, p.slowDuration);
           if (p.stunDuration > 0) h.stunTimer = Math.max(h.stunTimer, p.stunDuration);
           if (owner && ownerStats?.capstones['mh_p2'] && p.kind === 'cleaver') {
@@ -3011,7 +3637,7 @@ export class ArenaSimulation {
             owner.skill1Cd = Math.max(0, owner.skill1Cd - 0.15);
           }
           if (owner && p.lifestealRatio > 0) {
-            const leech = p.damage * p.lifestealRatio;
+            const leech = (p.damage + extraHitDmg) * p.lifestealRatio;
             const actual = this.healHero(owner, leech);
             if (ownerStats?.capstones['vg_p3'] && leech > actual) {
               owner.shield = Math.min(85, owner.shield + (leech - actual));
@@ -3039,12 +3665,27 @@ export class ArenaSimulation {
             consumed = true;
             break;
           }
+          if (p.kind === 'censer_bomb') {
+            this.spawnPlagueCloud(p, owner);
+            consumed = true;
+            break;
+          }
+          if (p.kind === 'solar_disc') {
+            this.spawnSolarFlare(p, owner);
+            consumed = true;
+            break;
+          }
           if (p.splashRadius > 0) {
             this.detonateProjectile(p, owner);
             consumed = true;
             break;
           }
           this.damageDroid(d, p.damage, owner);
+          if (owner && d.hp > 0 && p.dotKind === 'venom' && p.dotDps && p.dotDuration) {
+            this.applyVenomToDroid(d, owner, 1, p.dotDps, p.dotDuration);
+          } else if (owner && d.hp > 0 && p.dotKind === 'burn' && p.dotDps && p.dotDuration) {
+            this.applyBurnToDroid(d, owner, p.dotDps, p.dotDuration);
+          }
           if (p.slowDuration > 0) d.slowTimer = Math.max(d.slowTimer, p.slowDuration);
           if (owner && ownerStats?.capstones['xy_p3'] && p.kind === 'dagger') {
             owner.skill1Cd = Math.max(0, owner.skill1Cd - 0.15);
@@ -3113,7 +3754,8 @@ export class ArenaSimulation {
           if (p.splashRadius > 0) {
             this.detonateProjectile(p, owner);
           } else {
-            this.damageTurret(t, p.damage, owner);
+            const droidSiegeMult = p.kind === 'droid_shot' ? (this.waveTier >= 4 ? 2.35 : 1.75) : 1;
+            this.damageTurret(t, p.damage * droidSiegeMult, owner);
           }
           consumed = true;
           break;
@@ -3132,7 +3774,8 @@ export class ArenaSimulation {
           if (p.splashRadius > 0) {
             this.detonateProjectile(p, owner);
           } else {
-            this.damageCore(c, p.damage, owner);
+            const droidSiegeMult = p.kind === 'droid_shot' ? (this.waveTier >= 4 ? 2.35 : 1.75) : 1;
+            this.damageCore(c, p.damage * droidSiegeMult, owner);
           }
           consumed = true;
           break;
@@ -3162,6 +3805,117 @@ export class ArenaSimulation {
       stunDuration: 0,
     });
     this.emitFx({ kind: 'ring', x: p.x, y: p.y, radius: p.splashRadius, color: '#818CF8' });
+  }
+
+  private applyVenomToHero(
+    target: HeroEntity,
+    owner: HeroEntity,
+    stacksToAdd: number,
+    dpsPerStack: number,
+    duration: number
+  ): void {
+    if (!target.alive || target.inDropPod) return;
+    target.venomStacks = Math.min(5, target.venomStacks + stacksToAdd);
+    target.venomTimer = Math.max(target.venomTimer, duration);
+    target.venomDps = Math.max(target.venomDps, dpsPerStack);
+    target.venomOwnerId = owner.id;
+    if (target.venomTickTimer <= 0 || target.venomTickTimer > 0.4) {
+      target.venomTickTimer = 0.4;
+    }
+  }
+
+  private applyVenomToDroid(
+    target: DroidEntity,
+    owner: HeroEntity,
+    stacksToAdd: number,
+    dpsPerStack: number,
+    duration: number
+  ): void {
+    if (target.hp <= 0) return;
+    target.venomStacks = Math.min(5, target.venomStacks + stacksToAdd);
+    target.venomTimer = Math.max(target.venomTimer, duration);
+    target.venomDps = Math.max(target.venomDps, dpsPerStack);
+    target.venomOwnerId = owner.id;
+    if (target.venomTickTimer <= 0 || target.venomTickTimer > 0.4) {
+      target.venomTickTimer = 0.4;
+    }
+  }
+
+  private applyBurnToHero(target: HeroEntity, owner: HeroEntity, dps: number, duration: number): void {
+    if (!target.alive || target.inDropPod) return;
+    target.burnTimer = Math.max(target.burnTimer, duration);
+    target.burnDps = Math.max(target.burnDps, dps);
+    target.burnOwnerId = owner.id;
+    if (target.burnTickTimer <= 0 || target.burnTickTimer > 0.4) {
+      target.burnTickTimer = 0.4;
+    }
+  }
+
+  private applyBurnToDroid(target: DroidEntity, owner: HeroEntity, dps: number, duration: number): void {
+    if (target.hp <= 0) return;
+    target.burnTimer = Math.max(target.burnTimer, duration);
+    target.burnDps = Math.max(target.burnDps, dps);
+    target.burnOwnerId = owner.id;
+    if (target.burnTickTimer <= 0 || target.burnTickTimer > 0.4) {
+      target.burnTickTimer = 0.4;
+    }
+  }
+
+  private spawnPlagueCloud(p: ProjectileEntity, owner: HeroEntity | null): void {
+    const ownerStats = owner ? computeHeroStats(owner.heroId, owner.upgrades, owner.bonusMaxHp) : null;
+    const dur = Math.max(3.5, p.slowDuration);
+    if (ownerStats?.capstones['vp_q3']) {
+      this.dealAreaDamage(owner, p.x, p.y, p.splashRadius, 30, 0.7, p.stunDuration, '#84CC16', false);
+    }
+    this.hazards.push({
+      id: nextId('plague'),
+      ownerId: p.ownerId,
+      team: p.team,
+      kind: 'plague_cloud',
+      x: p.x,
+      y: p.y,
+      radius: p.splashRadius,
+      damage: p.damage,
+      timer: dur,
+      maxTimer: dur,
+      tickTimer: 0.08,
+      triggered: false,
+      color: '#84CC16',
+      stunDuration: 0,
+    });
+    this.emitFx({ kind: 'ring', x: p.x, y: p.y, radius: p.splashRadius, color: '#84CC16' });
+  }
+
+  private spawnSolarFlare(p: ProjectileEntity, owner: HeroEntity | null): void {
+    const dur = Math.max(2.6, p.slowDuration);
+    if (p.stunDuration > 0) {
+      this.dealAreaDamage(owner, p.x, p.y, p.splashRadius, Math.round(p.damage * 1.15), 0.6, p.stunDuration, '#F59E0B', true);
+    }
+    this.hazards.push({
+      id: nextId('flare'),
+      ownerId: p.ownerId,
+      team: p.team,
+      kind: 'solar_flare',
+      x: p.x,
+      y: p.y,
+      radius: p.splashRadius,
+      damage: p.damage,
+      timer: dur,
+      maxTimer: dur,
+      tickTimer: 0.08,
+      triggered: false,
+      color: '#F59E0B',
+      stunDuration: 0,
+    });
+    this.emitFx({
+      kind: 'explosion',
+      x: p.x,
+      y: p.y,
+      radius: p.splashRadius,
+      color: '#F59E0B',
+      heavy: false,
+      ownerId: p.ownerId,
+    });
   }
 
   private detonateProjectile(p: ProjectileEntity, owner: HeroEntity | null): void {
@@ -3324,7 +4078,12 @@ export class ArenaSimulation {
       target.cloakTimer = 0;
       target.meltdownTimer = 0;
       target.spinTimer = 0;
-      target.respawnTimer = Math.min(18, 6 + Math.floor(this.matchTime / 90));
+      const diedPoisoned = target.venomStacks > 0 || target.venomTimer > 0;
+      target.venomStacks = 0;
+      target.venomTimer = 0;
+      target.burnTimer = 0;
+      target.hasteTimer = 0;
+      target.respawnTimer = Math.min(28, 6 + Math.floor(this.matchTime / 45));
 
       const killer =
         attacker ??
@@ -3364,6 +4123,22 @@ export class ArenaSimulation {
         }
         if (killerStats.capstones['xy_u3']) {
           this.grantSolar(killer, 45, killer.x, killer.y - 26);
+        }
+        if (killerStats.capstones['vp_e3'] && diedPoisoned) {
+          this.dealAreaDamage(killer, target.x, target.y, 130, 60, 0.7, 0, '#84CC16', false);
+          this.emitFx({
+            kind: 'explosion',
+            x: target.x,
+            y: target.y,
+            radius: 130,
+            color: '#84CC16',
+            heavy: false,
+            ownerId: killer.id,
+          });
+        }
+        if (killerStats.capstones['vl_e3']) {
+          killer.skill2Cd = 0;
+          this.healHero(killer, 65);
         }
 
         let assistCount = 0;
@@ -3458,6 +4233,11 @@ export class ArenaSimulation {
     );
   }
 
+  private getSiegeEscalationMult(): number {
+    // Progressive Siege Escalation past 8:00 (+12% structure dmg/min up to +85%) so matches close out cleanly in 10-15 min
+    return this.matchTime > 480 ? Math.min(1.85, 1 + ((this.matchTime - 480) / 60) * 0.12) : 1;
+  }
+
   private damageTurret(t: TurretEntity, dmg: number, attacker: HeroEntity | null): void {
     if (!t.alive) return;
     if (t.shielded) {
@@ -3465,9 +4245,10 @@ export class ArenaSimulation {
       return;
     }
     const mult = attacker ? computeHeroStats(attacker.heroId, attacker.upgrades, attacker.bonusMaxHp).towerDamageMult : 1;
-    // 45% Backdoor Fortification when attacking without escorting lane creeps
-    const backdoorMult = attacker && !this.hasEnemyCreepsNear(t.team, t.x, t.y) ? 0.55 : 1;
-    t.hp -= dmg * mult * backdoorMult;
+    // 32% Backdoor Fortification before 12:00; shatters completely past 12:00 so late-game heroes can close out
+    const backdoorMult =
+      attacker && this.matchTime < 720 && !this.hasEnemyCreepsNear(t.team, t.x, t.y) ? 0.68 : 1;
+    t.hp -= dmg * mult * backdoorMult * this.getSiegeEscalationMult();
     t.hitFlashTimer = 0.12;
     if (t.hp <= 0) {
       t.alive = false;
@@ -3505,8 +4286,9 @@ export class ArenaSimulation {
       return;
     }
     const mult = attacker ? computeHeroStats(attacker.heroId, attacker.upgrades, attacker.bonusMaxHp).towerDamageMult : 1;
-    const backdoorMult = attacker && !this.hasEnemyCreepsNear(c.team, c.x, c.y, 400) ? 0.55 : 1;
-    c.hp = Math.max(0, c.hp - dmg * mult * backdoorMult);
+    const backdoorMult =
+      attacker && this.matchTime < 720 && !this.hasEnemyCreepsNear(c.team, c.x, c.y, 400) ? 0.68 : 1;
+    c.hp = Math.max(0, c.hp - dmg * mult * backdoorMult * this.getSiegeEscalationMult());
     c.hitFlashTimer = 0.12;
     if (c.hp <= 0 && this.phase === 'PLAYING') {
       const winner: Team = c.team === 'blue' ? 'red' : 'blue';
@@ -3572,6 +4354,14 @@ export class ArenaSimulation {
       if (affordable.length > 0 && Math.random() < 0.72) {
         const pick = affordable[Math.floor(Math.random() * affordable.length)];
         this.buyUpgradeForHero(h.id, pick.id);
+      } else {
+        const affordableAsc = ASCENSION_INFUSIONS.filter(
+          (inf) => canForgeAscension(h.upgrades, h.heroId, inf, h.solar).allowed
+        );
+        if (affordableAsc.length > 0 && Math.random() < 0.65) {
+          const pick = affordableAsc[Math.floor(Math.random() * affordableAsc.length)];
+          this.buyUpgradeForHero(h.id, pick.id);
+        }
       }
 
       if (h.hp < h.maxHp * 0.34) {
@@ -3694,6 +4484,8 @@ export class ArenaSimulation {
         else if (h.heroId === 'bastion' && bestDist < 160) wantSkill2 = true;
         else if (h.heroId === 'seraph' && (bestDist < 165 || h.hp < h.maxHp * 0.6)) wantSkill2 = true;
         else if (h.heroId === 'xylar' && targetIsHero && bestDist < 290) wantSkill2 = true;
+        else if (h.heroId === 'vespra' && bestDist < stats.skill2Radius * 0.9) wantSkill2 = true;
+        else if (h.heroId === 'vale' && targetIsHero && bestDist < 230) wantSkill2 = true;
         else if (h.heroId === 'vexia' || h.heroId === 'korak' || h.heroId === 'caldris') wantSkill2 = true;
       }
 

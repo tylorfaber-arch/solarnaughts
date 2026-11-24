@@ -870,6 +870,19 @@ function drawWallBrazier(
   ctx.beginPath();
   ctx.arc(x, y - 5, 3.5 * flicker, 0, Math.PI * 2);
   ctx.fill();
+
+  // Rising flickering torch embers
+  for (let i = 0; i < 2; i++) {
+    const p = (seed * 0.72 + i * 0.5) % 1;
+    const ex = x + Math.sin(seed * 4 + i * 3.1) * (5 + p * 7);
+    const ey = y - 10 - p * 34;
+    ctx.fillStyle = innerCol;
+    ctx.globalAlpha = (1 - p) * 0.8;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 1.8 * (1 - p * 0.4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawBaseZone(
@@ -927,6 +940,19 @@ function drawBaseZone(
     ctx.fillRect(cx - 18, cy - 5 + bob, 36, 10);
     ctx.fillRect(cx - 5, cy - 18 + bob, 10, 36);
   }
+
+  // Ascending restorative emerald-gold motes above the Healing Altar
+  for (let i = 0; i < 6; i++) {
+    const p = (time * 0.42 + i * 0.17) % 1;
+    const mx = cx + Math.sin(time * 1.8 + i * 2.1) * 48;
+    const my = floorY - 24 - p * 175;
+    ctx.fillStyle = i % 2 === 0 ? '#34D399' : '#FDE68A';
+    ctx.globalAlpha = Math.sin(p * Math.PI) * 0.72;
+    ctx.beginPath();
+    ctx.arc(mx, my, 2.2 + (i % 2) * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
   // Sanctified barrier energy gate
   const gateX = isBlue ? zone.x + zone.w : zone.x;
@@ -1168,6 +1194,33 @@ function drawJumpPad(
   ctx.fillStyle = bGrad;
   ctx.fillRect(jp.x + 8, jp.y - beamH, jp.w - 16, beamH);
 
+  // Rising vertical updraft air streaks inside gravity well
+  ctx.strokeStyle = playerOver ? '#FEF08A' : jp.color;
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 4; i++) {
+    const sp = (time * (playerOver ? 3.8 : 2.2) + i * 0.27) % 1;
+    const sx = jp.x + 14 + ((i * 23) % Math.max(18, jp.w - 28));
+    const sy = jp.y - 4 - sp * (beamH - 12);
+    ctx.globalAlpha = (1 - sp) * (playerOver ? 0.85 : 0.45);
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx, sy - 14);
+    ctx.stroke();
+  }
+
+  // Expanding concentric launch ripples when player is primed on pad
+  if (playerOver) {
+    for (let i = 0; i < 2; i++) {
+      const rp = (time * 2.4 + i * 0.5) % 1;
+      ctx.strokeStyle = '#FDE047';
+      ctx.globalAlpha = (1 - rp) * 0.78;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, jp.y + 2, 16 + rp * (jp.w * 0.56), 4 + rp * 8, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   // Rising runic gravity chevrons
   for (let i = 0; i < 3; i++) {
     const phase = (time * (playerOver ? 3.2 : 2.1) + i * 0.33) % 1;
@@ -1270,6 +1323,34 @@ function drawRelicShard(
     ctx.fill();
     ctx.stroke();
   }
+
+  // Rotating 4-point star crystal glint + orbiting relic dust
+  const glint = 0.55 + 0.45 * Math.sin(time * 5.2 + sc.bobPhase);
+  ctx.save();
+  ctx.rotate(time * 1.6 + sc.bobPhase);
+  ctx.fillStyle = `rgba(254, 249, 195, ${(0.85 * glint).toFixed(2)})`;
+  const glLen = (sc.value >= 16 ? 9 : 7) * glint;
+  ctx.beginPath();
+  ctx.moveTo(0, -glLen);
+  ctx.lineTo(1.8, -1.8);
+  ctx.lineTo(glLen, 0);
+  ctx.lineTo(1.8, 1.8);
+  ctx.lineTo(0, glLen);
+  ctx.lineTo(-1.8, 1.8);
+  ctx.lineTo(-glLen, 0);
+  ctx.lineTo(-1.8, -1.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  for (let i = 0; i < 2; i++) {
+    const oa = time * 2.8 + sc.bobPhase + i * Math.PI;
+    ctx.fillStyle = '#FDE68A';
+    ctx.globalAlpha = 0.72;
+    ctx.beginPath();
+    ctx.arc(Math.cos(oa) * (r + 5), Math.sin(oa) * (r * 0.55), 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
 }
 
@@ -1284,13 +1365,26 @@ function drawCryptSpirit(
   ctx.translate(c.x, c.y + bob);
 
   // Soft spectral jade aura
-  const aura = ctx.createRadialGradient(0, 0, 6, 0, 0, 34);
-  aura.addColorStop(0, 'rgba(16, 185, 129, 0.36)');
+  const aura = ctx.createRadialGradient(0, 0, 6, 0, 0, 36);
+  aura.addColorStop(0, 'rgba(16, 185, 129, 0.38)');
   aura.addColorStop(1, 'rgba(16, 185, 129, 0)');
   ctx.fillStyle = aura;
   ctx.beginPath();
-  ctx.arc(0, 0, 34, 0, Math.PI * 2);
+  ctx.arc(0, 0, 36, 0, Math.PI * 2);
   ctx.fill();
+
+  // Orbiting spectral soul wisps trailing beneath spirit
+  for (let i = 0; i < 3; i++) {
+    const wa = time * 3.1 + c.bobPhase + (i * Math.PI * 2) / 3;
+    const wx = Math.cos(wa) * 21;
+    const wy = 10 + Math.sin(wa * 1.4) * 9;
+    ctx.fillStyle = i === 0 ? '#6EE7B7' : '#34D399';
+    ctx.globalAlpha = 0.65;
+    ctx.beginPath();
+    ctx.arc(wx, wy, 2.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
   if (sprite) {
     const drawH = 62;
@@ -1336,7 +1430,7 @@ function drawReliquaryTower(
 
   ctx.save();
   if (!t.alive) {
-    // Crumbled gothic ruin plinth
+    // Crumbled gothic ruin plinth + smoldering ash wisps
     ctx.fillStyle = '#1E2332';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 2.6;
@@ -1349,6 +1443,16 @@ function drawReliquaryTower(
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const sp = (time * 0.45 + i * 0.33 + t.x * 0.01) % 1;
+      const sx = t.x - 14 + i * 14 + Math.sin(time * 1.8 + i) * 6;
+      const sy = t.y - 22 - sp * 46;
+      ctx.fillStyle = i === 1 ? 'rgba(251, 146, 60, 0.55)' : 'rgba(148, 163, 184, 0.25)';
+      ctx.globalAlpha = 1 - sp;
+      ctx.beginPath();
+      ctx.arc(sx, sy, i === 1 ? 2.2 : 5 + sp * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
     return;
   }
@@ -1426,6 +1530,18 @@ function drawReliquaryTower(
     ctx.stroke();
   }
 
+  // Spinning carved rune halo around spire head
+  ctx.save();
+  ctx.translate(t.x, headY);
+  ctx.rotate(time * (isInner ? -1.4 : 1.1));
+  ctx.strokeStyle = isBlue ? 'rgba(56, 189, 248, 0.55)' : 'rgba(244, 63, 94, 0.55)';
+  ctx.lineWidth = 1.8;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.arc(0, 0, isInner ? 28 : 22, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
   // Inner Tower Orbiting Golden Astrolabe Ring
   if (isInner) {
     ctx.save();
@@ -1434,13 +1550,43 @@ function drawReliquaryTower(
     ctx.beginPath();
     ctx.ellipse(t.x, headY, 38, 11, Math.sin(time * 1.4) * 0.35, 0, Math.PI * 2);
     ctx.stroke();
+    const oa = time * 2.6;
+    ctx.fillStyle = '#FEF08A';
+    ctx.beginPath();
+    ctx.arc(t.x + Math.cos(oa) * 38, headY + Math.sin(oa) * 11, 3.2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
-  // Subtle arcane aiming pointer at the crystal reliquary focus
+  // Damage state smoke & crackling sparks when tower HP drops below 50%
+  const hpRatio = t.hp / t.maxHp;
+  if (!t.shielded && hpRatio < 0.55) {
+    const count = hpRatio < 0.28 ? 5 : 3;
+    for (let i = 0; i < count; i++) {
+      const p = (time * (hpRatio < 0.28 ? 1.15 : 0.72) + i * (1 / count) + t.x * 0.01) % 1;
+      const sx = t.x + Math.sin(time * 3 + i * 2.1) * 18;
+      const sy = t.y - h * (0.28 + (i % 3) * 0.2) - p * 44;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(30, 41, 59, 0.6)' : '#F97316';
+      ctx.globalAlpha = (1 - p) * (i % 2 === 0 ? 0.65 : 0.92);
+      ctx.beginPath();
+      ctx.arc(sx, sy, i % 2 === 0 ? 5 + p * 7 : 2.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Subtle arcane aiming pointer + faint targeting beam at crystal reliquary focus
   ctx.save();
   ctx.translate(t.x, headY);
   ctx.rotate(t.aimAngle);
+  if (t.attackCd > 0.45) {
+    ctx.strokeStyle = isBlue ? 'rgba(56, 189, 248, 0.28)' : 'rgba(244, 63, 94, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(26, 0);
+    ctx.lineTo(135, 0);
+    ctx.stroke();
+  }
   ctx.fillStyle = teamCol;
   ctx.strokeStyle = INK;
   ctx.lineWidth = 1.8;
@@ -1454,7 +1600,7 @@ function drawReliquaryTower(
   ctx.stroke();
   ctx.restore();
 
-  // Inner Tower Protective Barrier Dome while Outer Tower stands
+  // Inner Tower Protective Barrier Dome with rotating runic shield arcs
   if (t.shielded) {
     ctx.save();
     ctx.strokeStyle = '#FBBF24';
@@ -1464,6 +1610,16 @@ function drawReliquaryTower(
     ctx.arc(t.x, t.y - h * 0.48, 78, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      const a = time * 1.1 + (i * Math.PI * 2) / 3;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y - h * 0.48, 82, a, a + 0.72);
+      ctx.stroke();
+    }
+
     ctx.font = '700 10px "Plus Jakarta Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FDE68A';
@@ -1476,7 +1632,7 @@ function drawReliquaryTower(
       t.y - h - 14,
       82,
       8,
-      t.hp / t.maxHp,
+      hpRatio,
       teamCol,
       `${isInner ? 'INNER' : 'OUTER'} ${Math.ceil(t.hp)}`
     );
@@ -1538,19 +1694,60 @@ function drawAncientCore(
     ctx.stroke();
   }
 
-  // Dual Counter-Rotating Golden & Faction Astrolabe Rings pulsing around heart
+  // Ascending Cathedral Beacon Beam pulsing skyward from Core
+  const beaconW = 34 + Math.sin(time * 2.8) * 6;
+  const beaconGrad = ctx.createLinearGradient(core.x - beaconW, 0, core.x + beaconW, 0);
+  beaconGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  beaconGrad.addColorStop(0.5, isBlue ? 'rgba(56, 189, 248, 0.16)' : 'rgba(244, 63, 94, 0.16)');
+  beaconGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = beaconGrad;
+  ctx.fillRect(core.x - beaconW, 0, beaconW * 2, heartY);
+
+  // Dual Counter-Rotating Golden & Faction Astrolabe Rings + Orbiting Gemstone Nodes
   const bob = Math.sin(time * 3.2) * 4;
+  const a1 = time * 0.65;
+  const a2 = -time * 0.85;
   ctx.strokeStyle = '#F59E0B';
   ctx.lineWidth = 2.8;
   ctx.beginPath();
-  ctx.ellipse(core.x, heartY + bob, 56, 17, time * 0.65, 0, Math.PI * 2);
+  ctx.ellipse(core.x, heartY + bob, 56, 17, a1, 0, Math.PI * 2);
   ctx.stroke();
 
   ctx.strokeStyle = teamCol;
   ctx.lineWidth = 2.4;
   ctx.beginPath();
-  ctx.ellipse(core.x, heartY + bob, 50, 15, -time * 0.85, 0, Math.PI * 2);
+  ctx.ellipse(core.x, heartY + bob, 50, 15, a2, 0, Math.PI * 2);
   ctx.stroke();
+
+  // Orbiting glowing astrolabe gemstones
+  for (let i = 0; i < 2; i++) {
+    const theta = time * 2.2 + i * Math.PI;
+    const lx = Math.cos(theta) * 56;
+    const ly = Math.sin(theta) * 17;
+    const rx = lx * Math.cos(a1) - ly * Math.sin(a1);
+    const ry = lx * Math.sin(a1) + ly * Math.cos(a1);
+    ctx.fillStyle = '#FEF08A';
+    ctx.beginPath();
+    ctx.arc(core.x + rx, heartY + bob + ry, 3.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Crackle sparks & rising smoke when Core HP < 55%
+  const coreRatio = core.hp / core.maxHp;
+  if (!core.shielded && coreRatio < 0.55) {
+    const count = coreRatio < 0.25 ? 7 : 4;
+    for (let i = 0; i < count; i++) {
+      const p = (time * 1.1 + i * (1 / count)) % 1;
+      const sx = core.x + Math.sin(time * 4 + i * 1.9) * 32;
+      const sy = heartY + 20 - p * 85;
+      ctx.fillStyle = i % 2 === 0 ? '#FB923C' : '#FEF08A';
+      ctx.globalAlpha = 1 - p;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
 
   if (core.shielded) {
     const pulse = 0.55 + 0.3 * Math.sin(time * 4);
@@ -1562,6 +1759,17 @@ function drawAncientCore(
     ctx.fill();
     ctx.globalAlpha = pulse;
     ctx.stroke();
+
+    // Rotating segmented barrier arcs
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#FDE68A';
+    ctx.lineWidth = 2.8;
+    for (let i = 0; i < 4; i++) {
+      const sa = -time * 0.9 + (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.arc(core.x, heartY + 12, 119, sa, sa + 0.55);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
 
     ctx.font = '700 11px "Plus Jakarta Sans", sans-serif';
@@ -1575,7 +1783,7 @@ function drawAncientCore(
       core.y - coreH - 14,
       138,
       11,
-      core.hp / core.maxHp,
+      coreRatio,
       teamCol,
       `ANCIENT CORE ${Math.ceil(core.hp)}`
     );
@@ -1600,6 +1808,13 @@ function drawHazardZone(ctx: CanvasRenderingContext2D, hz: HazardZoneEntity, tim
       grad.addColorStop(1, 'rgba(45, 212, 191, 0)');
       ctx.fillStyle = grad;
       ctx.fillRect(hz.x - hz.radius, 0, hz.radius * 2, hz.y + 40);
+
+      // Ground impact shockwave ring
+      ctx.strokeStyle = '#CCFBF1';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.ellipse(hz.x, hz.y, hz.radius * 1.08, hz.radius * 0.28, 0, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
       ctx.strokeStyle = 'rgba(45, 212, 191, 0.55)';
       ctx.lineWidth = 2.2;
@@ -1608,17 +1823,22 @@ function drawHazardZone(ctx: CanvasRenderingContext2D, hz: HazardZoneEntity, tim
       ctx.lineTo(hz.x, hz.y);
       ctx.stroke();
 
-      ctx.fillStyle = `rgba(45, 212, 191, ${(0.08 + progress * 0.25).toFixed(2)})`;
+      ctx.fillStyle = `rgba(45, 212, 191, ${(0.08 + progress * 0.26).toFixed(2)})`;
       ctx.beginPath();
       ctx.arc(hz.x, hz.y, hz.radius * progress, 0, Math.PI * 2);
       ctx.fill();
 
+      // Rotating orbital lock reticle brackets
+      ctx.save();
+      ctx.translate(hz.x, hz.y);
+      ctx.rotate(time * 3.2);
       ctx.strokeStyle = '#2DD4BF';
       ctx.lineWidth = 3;
-      ctx.setLineDash([8, 6]);
+      ctx.setLineDash([12, 8]);
       ctx.beginPath();
-      ctx.arc(hz.x, hz.y, hz.radius, 0, Math.PI * 2);
+      ctx.arc(0, 0, hz.radius, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.restore();
     }
   } else if (hz.kind === 'singularity') {
     ctx.translate(hz.x, hz.y);
@@ -1631,6 +1851,19 @@ function drawHazardZone(ctx: CanvasRenderingContext2D, hz: HazardZoneEntity, tim
     ctx.beginPath();
     ctx.arc(0, 0, hz.radius, 0, Math.PI * 2);
     ctx.fill();
+
+    // Inward-spiraling gravity debris streaks
+    for (let i = 0; i < 6; i++) {
+      const p = (time * 1.4 + i * 0.17) % 1;
+      const dist = (1 - p) * hz.radius * 0.92;
+      const a = i * 1.05 - time * 5.2 - p * 2.2;
+      ctx.fillStyle = i % 2 === 0 ? '#A5B4FC' : '#38BDF8';
+      ctx.globalAlpha = Math.sin(p * Math.PI) * 0.85;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * dist, Math.sin(a) * dist, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
 
     ctx.rotate(-time * 6.5);
     ctx.strokeStyle = '#818CF8';
@@ -1648,16 +1881,112 @@ function drawHazardZone(ctx: CanvasRenderingContext2D, hz: HazardZoneEntity, tim
     ctx.arc(0, 0, 14, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  } else if (hz.kind === 'plague_cloud') {
+    // Plague-Cantor Vespra's lingering Miasma Censer toxic cloud
+    ctx.translate(hz.x, hz.y);
+    const fade = Math.min(1, hz.timer * 1.6);
+    ctx.globalAlpha = fade;
+    const mGrad = ctx.createRadialGradient(0, 0, 14, 0, 0, hz.radius);
+    mGrad.addColorStop(0, 'rgba(132, 204, 22, 0.42)');
+    mGrad.addColorStop(0.58, 'rgba(16, 185, 129, 0.24)');
+    mGrad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    ctx.fillStyle = mGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, hz.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Swirling layered venom mist lobes
+    for (let i = 0; i < 5; i++) {
+      const a = time * (i % 2 === 0 ? 0.9 : -0.7) + (i * Math.PI * 2) / 5;
+      const dist = hz.radius * 0.38;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(132, 204, 22, 0.16)' : 'rgba(5, 150, 105, 0.18)';
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * dist, Math.sin(a) * dist * 0.68, hz.radius * 0.36, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Rising bursting acid bubbles
+    for (let i = 0; i < 7; i++) {
+      const bp = (time * 1.1 + i * 0.145) % 1;
+      const bx = Math.cos(i * 2.4 + hz.x * 0.02) * hz.radius * 0.65;
+      const by = hz.radius * 0.35 - bp * hz.radius * 0.95;
+      ctx.strokeStyle = '#BEF264';
+      ctx.fillStyle = 'rgba(132, 204, 22, 0.35)';
+      ctx.lineWidth = 1.6;
+      ctx.globalAlpha = fade * (1 - bp) * 0.9;
+      ctx.beginPath();
+      ctx.arc(bx, by, 3 + bp * 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Occult rotating dashed perimeter ring
+    ctx.globalAlpha = fade * 0.85;
+    ctx.strokeStyle = hz.team === 'blue' ? '#84CC16' : '#A3E635';
+    ctx.lineWidth = 2.6;
+    ctx.setLineDash([10, 7]);
+    ctx.beginPath();
+    ctx.arc(0, 0, hz.radius, time * 1.4, time * 1.4 + Math.PI * 2);
+    ctx.stroke();
+  } else if (hz.kind === 'solar_flare') {
+    // Solarion Vale's Sundial Flare radiant conflagration ring
+    ctx.translate(hz.x, hz.y);
+    const fade = Math.min(1, hz.timer * 1.8);
+    ctx.globalAlpha = fade;
+    const sGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, hz.radius);
+    sGrad.addColorStop(0, 'rgba(254, 240, 138, 0.48)');
+    sGrad.addColorStop(0.55, 'rgba(245, 158, 11, 0.28)');
+    sGrad.addColorStop(0.85, 'rgba(56, 189, 248, 0.16)');
+    sGrad.addColorStop(1, 'rgba(245, 158, 11, 0)');
+    ctx.fillStyle = sGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, hz.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Rotating sundial clockwork spokes & concentric brass-gold rings
+    ctx.save();
+    ctx.rotate(time * 2.2);
+    ctx.strokeStyle = 'rgba(254, 240, 138, 0.78)';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, hz.radius * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 6; i++) {
+      const sa = (i * Math.PI) / 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(sa) * 16, Math.sin(sa) * 16);
+      ctx.lineTo(Math.cos(sa) * hz.radius * 0.94, Math.sin(sa) * hz.radius * 0.94);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Flickering outer solar flame tongues
+    ctx.strokeStyle = '#FBBF24';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, hz.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 8; i++) {
+      const a = -time * 2.8 + (i * Math.PI) / 4;
+      const flicker = 0.75 + 0.35 * Math.sin(time * 14 + i * 1.7);
+      ctx.fillStyle = i % 2 === 0 ? '#FEF08A' : '#38BDF8';
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * hz.radius * 0.95, Math.sin(a) * hz.radius * 0.95, 4.2 * flicker, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }
 
-function drawChainHook(ctx: CanvasRenderingContext2D, hk: HookEntity, _time: number): void {
+function drawChainHook(ctx: CanvasRenderingContext2D, hk: HookEntity, time: number): void {
   ctx.save();
   const dx = hk.x - hk.startX;
   const dy = hk.y - hk.startY;
   const dist = Math.hypot(dx, dy);
   const angle = Math.atan2(dy, dx);
+
+  // Energy pulse running down chain links
+  const pulsePos = (time * 4.5) % 1;
 
   // Heavy forged iron links
   const linkStep = 17;
@@ -1666,12 +1995,13 @@ function drawChainHook(ctx: CanvasRenderingContext2D, hk: HookEntity, _time: num
     const t = i / steps;
     const lx = hk.startX + dx * t;
     const ly = hk.startY + dy * t;
+    const nearPulse = Math.abs(t - pulsePos) < 0.14;
     ctx.save();
     ctx.translate(lx, ly);
     ctx.rotate(angle);
-    ctx.strokeStyle = i % 2 === 0 ? '#E2E8F0' : '#64748B';
+    ctx.strokeStyle = nearPulse ? '#34D399' : i % 2 === 0 ? '#E2E8F0' : '#64748B';
     ctx.fillStyle = '#0F172A';
-    ctx.lineWidth = 2.8;
+    ctx.lineWidth = nearPulse ? 3.2 : 2.8;
     ctx.beginPath();
     ctx.ellipse(0, 0, 7.5, 4, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1682,6 +2012,13 @@ function drawChainHook(ctx: CanvasRenderingContext2D, hk: HookEntity, _time: num
   // Barbed Abyssal Cyber-Claw Head
   ctx.translate(hk.x, hk.y);
   ctx.rotate(angle);
+  if (hk.latchedTargetId) {
+    ctx.strokeStyle = '#6EE7B7';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 22 + Math.sin(time * 24) * 3, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.fillStyle = hk.latchedTargetId ? '#34D399' : '#CBD5E1';
   ctx.strokeStyle = INK;
   ctx.lineWidth = 2.6;
@@ -1735,14 +2072,16 @@ function drawDroid(
   ctx.fill();
 
   const activeSprite = isBoneBorg ? boneBorgSprite : trooperSprite;
+  const firingKick = d.attackCd > 0.72 ? -0.09 : 0;
+  const drawH = (isBoneBorg ? 52 : 54) * scale;
+
   if (activeSprite) {
-    const drawH = (isBoneBorg ? 52 : 54) * scale;
     const drawW = drawH * activeSprite.aspect;
 
     ctx.save();
     ctx.translate(0, 18 - strideBob);
     ctx.scale(f, 1);
-    ctx.rotate(strideRock);
+    ctx.rotate(strideRock + firingKick);
 
     ctx.drawImage(activeSprite.canvas, -drawW / 2, -drawH, drawW, drawH);
     if (d.hitFlashTimer > 0) {
@@ -1751,11 +2090,17 @@ function drawDroid(
       ctx.globalAlpha = 1;
     }
 
-    // Faction shoulder pennant / visor glow indicator for instant team recognition
+    // Faction shoulder pennant / visor glow indicator + muzzle flash when firing
     if (!isBoneBorg) {
       ctx.fillStyle = primary;
       ctx.beginPath();
       ctx.arc(drawW * 0.06, -drawH * 0.76, 3.2 * scale, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (d.attackCd > 0.74) {
+      ctx.fillStyle = '#FEF08A';
+      ctx.beginPath();
+      ctx.arc(drawW * 0.42, -drawH * 0.45, 5.5, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.restore();
@@ -1767,13 +2112,15 @@ function drawDroid(
       ctx.beginPath();
       ctx.ellipse(0, 14 - drawH - strideBob, 12, 3.8, 0, 0, Math.PI * 2);
       ctx.stroke();
-    }
-
-    if (d.hp < d.maxHp) {
-      drawCompactBar(ctx, 0, 8 - drawH, 34, 4.5, d.hp / d.maxHp, primary);
+      const sa = time * 4.2;
+      ctx.fillStyle = '#FEF08A';
+      ctx.beginPath();
+      ctx.arc(Math.cos(sa) * 12, 14 - drawH - strideBob + Math.sin(sa) * 3.8, 2.2, 0, Math.PI * 2);
+      ctx.fill();
     }
   } else {
     // Instant fallback before image decode finishes
+    ctx.save();
     ctx.scale(scale, scale);
     ctx.fillStyle = d.hitFlashTimer > 0 ? '#FFFFFF' : isBlue ? '#1E293B' : '#2A1829';
     ctx.strokeStyle = INK;
@@ -1784,8 +2131,51 @@ function drawDroid(
     ctx.stroke();
     ctx.fillStyle = primary;
     ctx.fillRect(-13, -13, 26, 6);
-    if (d.hp < d.maxHp) {
-      drawCompactBar(ctx, 0, -28, 32, 4, d.hp / d.maxHp, primary);
+    ctx.restore();
+  }
+
+  // Droid Status FX: Venom DoT bubbles, Solar Burn flames, Slow ring
+  if (d.slowTimer > 0) {
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 16, 18 * scale, 5.5, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (d.venomStacks > 0) {
+    for (let i = 0; i < Math.min(3, d.venomStacks); i++) {
+      const vp = (time * 2.1 + i * 0.34 + d.x * 0.01) % 1;
+      ctx.fillStyle = '#84CC16';
+      ctx.globalAlpha = 1 - vp;
+      ctx.beginPath();
+      ctx.arc((i - 1) * 9, 8 - vp * 38, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  if (d.burnTimer > 0) {
+    for (let i = 0; i < 2; i++) {
+      const fp = (time * 3.2 + i * 0.5 + d.x * 0.01) % 1;
+      ctx.fillStyle = i === 0 ? '#FBBF24' : '#F97316';
+      ctx.globalAlpha = 1 - fp;
+      ctx.beginPath();
+      ctx.arc((i === 0 ? -7 : 7), 4 - fp * 34, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const barY = activeSprite ? 8 - drawH : -28;
+  if (d.hp < d.maxHp || d.venomStacks > 0 || d.burnTimer > 0) {
+    drawCompactBar(ctx, 0, barY, 34, 4.5, d.hp / d.maxHp, primary);
+    if (d.venomStacks > 0) {
+      ctx.font = '800 9px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#BEF264';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2;
+      ctx.strokeText(`×${d.venomStacks}`, 20, barY + 5);
+      ctx.fillText(`×${d.venomStacks}`, 20, barY + 5);
     }
   }
   ctx.restore();
@@ -1835,6 +2225,24 @@ function drawDropPodSequence(
   ctx.closePath();
   ctx.fill();
 
+  // Twin side vernier flame plumes
+  for (const side of [-1, 1]) {
+    ctx.fillStyle = 'rgba(253, 224, 71, 0.72)';
+    ctx.beginPath();
+    ctx.moveTo(side * 20, -8);
+    ctx.lineTo(side * 30, -34 - Math.sin(time * 48 + side) * 6);
+    ctx.lineTo(side * 12, -16);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Fiery atmospheric re-entry bow shockwave cone below nose
+  ctx.strokeStyle = 'rgba(253, 224, 71, 0.78)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 14, 34, 0.25, Math.PI - 0.25);
+  ctx.stroke();
+
   if (art.dropPod) {
     const podH = 78;
     const podW = podH * art.dropPod.aspect;
@@ -1882,6 +2290,8 @@ const HERO_SPRITE_HEIGHT: Record<HeroEntity['heroId'], number> = {
   vexia: 84,
   xylar: 82,
   caldris: 92,
+  vespra: 88,
+  vale: 90,
 };
 
 function drawHero(
@@ -1916,11 +2326,12 @@ function drawHero(
     ctx.globalAlpha = 0.45;
   }
 
-  // Team ground contact shadow & local-player gilded focus halo
+  // Team ground contact shadow (responds subtly to grounded vs airborne state)
+  const airScale = h.grounded ? 1 : 0.78;
   ctx.save();
   ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.34)' : 'rgba(244, 63, 94, 0.36)';
   ctx.beginPath();
-  ctx.ellipse(0, h.h / 2 - 1, h.w * 0.78, 7.5, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, h.h / 2 - 1, h.w * 0.78 * airScale, 7.5 * airScale, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = teamCol;
   ctx.lineWidth = 1.6;
@@ -1929,7 +2340,16 @@ function drawHero(
     ctx.strokeStyle = 'rgba(251, 191, 36, 0.92)';
     ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.ellipse(0, h.h / 2 - 1, h.w * 0.96, 9.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, h.h / 2 - 1, h.w * 0.96 * airScale, 9.5 * airScale, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Slow debuff ground frost ring
+  if (h.slowTimer > 0) {
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 2.2;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    ctx.ellipse(0, h.h / 2 - 1, h.w * 1.05, 11, 0, time * 3, time * 3 + Math.PI * 2);
     ctx.stroke();
   }
   ctx.restore();
@@ -1997,17 +2417,32 @@ function drawHero(
     ctx.restore();
   }
 
-  // Recall beam
+  // Recall beam + ground magic circle & ascending light ribbons
   if (h.recallTimer > 0) {
     const pct = 1 - h.recallTimer / 2.2;
     ctx.save();
-    ctx.strokeStyle = '#38BDF8';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(0, 0, 36, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
-    ctx.stroke();
     ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
-    ctx.fillRect(-16, -240, 32, 260);
+    ctx.fillRect(-18, -240, 36, 265);
+    ctx.strokeStyle = '#7DD3FC';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.ellipse(0, h.h / 2 - 2, 34, 10, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#38BDF8';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 38, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct);
+    ctx.stroke();
+    for (let i = 0; i < 3; i++) {
+      const rp = (time * 1.6 + i * 0.33) % 1;
+      const rx = Math.cos(time * 6 + i * 2.1) * 20;
+      const ry = h.h / 2 - rp * 180;
+      ctx.fillStyle = '#BAE6FD';
+      ctx.globalAlpha = 1 - rp;
+      ctx.beginPath();
+      ctx.arc(rx, ry, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -2031,25 +2466,91 @@ function drawHero(
       : h.isHovering
         ? Math.sin(time * 7.5 + phaseSeed) * 3 + 3
         : 0;
+    const airPitch = !h.grounded ? Math.max(-0.14, Math.min(0.14, (h.vy / 2600) * h.facing)) : 0;
+    const airStretch = !h.grounded ? Math.min(0.07, Math.abs(h.vy) / 5500) : 0;
     const moveTilt = Math.max(-0.1, Math.min(0.1, (h.vx / 3000) * h.facing));
     const attackKick = h.recoilTimer > 0 ? 0.08 : 0;
     const attackLunge = h.recoilTimer > 0 ? 4.2 : 0;
 
-    // Hover propulsion or cloak ambush subtle ambient effects behind sprite
+    // Hero-specific subtle ambient flourishes behind sprite
     if (h.isHovering || h.heroId === 'caldris') {
       ctx.save();
       ctx.fillStyle = h.heroId === 'caldris' ? 'rgba(45, 212, 191, 0.34)' : 'rgba(56, 189, 248, 0.34)';
       ctx.beginPath();
       ctx.ellipse(0, h.h / 2 - 2, 22, 6, 0, 0, Math.PI * 2);
       ctx.fill();
+      if (h.heroId === 'caldris') {
+        ctx.strokeStyle = '#2DD4BF';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.ellipse(0, h.h / 2 - 2, 26, 7.5, 0, time * 2.5, time * 2.5 + Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.restore();
     }
+    if (h.heroId === 'vale') {
+      // Orbiting golden-cyan sundial halo ring behind Vale
+      ctx.save();
+      ctx.translate(0, -spriteH * 0.45);
+      ctx.rotate(time * 1.4);
+      ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([9, 6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 30, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else if (h.heroId === 'vespra') {
+      // Drifting emerald censer vapor wisps trailing behind Vespra
+      ctx.save();
+      for (let i = 0; i < 2; i++) {
+        const vp = (time * 1.2 + i * 0.5 + phaseSeed) % 1;
+        ctx.fillStyle = 'rgba(132, 204, 22, 0.42)';
+        ctx.globalAlpha = 1 - vp;
+        ctx.beginPath();
+        ctx.arc(-h.facing * (12 + vp * 20), 2 - vp * 34, 4 + vp * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (h.heroId === 'korak') {
+      ctx.save();
+      for (let i = 0; i < 2; i++) {
+        const ka = time * 2.6 + phaseSeed + i * Math.PI;
+        ctx.fillStyle = '#34D399';
+        ctx.globalAlpha = 0.72;
+        ctx.beginPath();
+        ctx.arc(Math.cos(ka) * 28, -22 + Math.sin(ka * 1.3) * 14, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } else if (h.heroId === 'marrow' || h.heroId === 'bastion') {
+      const ep = (time * 1.5 + phaseSeed) % 1;
+      ctx.save();
+      ctx.fillStyle = h.heroId === 'marrow' ? '#34D399' : '#FDE047';
+      ctx.globalAlpha = (1 - ep) * 0.75;
+      ctx.beginPath();
+      ctx.arc(-h.facing * 12 + Math.sin(time * 4) * 5, -18 - ep * 32, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     if (h.cloakCritReady) {
       ctx.save();
       ctx.strokeStyle = 'rgba(253, 224, 71, 0.8)';
       ctx.lineWidth = 2.4;
       ctx.beginPath();
       ctx.arc(0, -6, 36 + Math.sin(time * 10) * 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (h.hasteTimer > 0) {
+      ctx.save();
+      ctx.strokeStyle = '#38BDF8';
+      ctx.lineWidth = 2.4;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.arc(0, -10, 38, time * 6, time * 6 + Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
@@ -2063,11 +2564,27 @@ function drawHero(
       ctx.restore();
     }
 
+    // Translucent motion afterimages during dashes, Chrono Haste, or jump-pad launches
+    const speedMag = Math.hypot(h.vx, h.vy);
+    if (h.dashTimer > 0 || h.hasteTimer > 0 || speedMag > 460) {
+      for (let g = 2; g >= 1; g--) {
+        ctx.save();
+        ctx.globalAlpha = (isCloaked ? 0.14 : 0.24) / g;
+        ctx.translate(-h.vx * 0.022 * g, h.h / 2 + 2 - runBob - floatBob - h.vy * 0.018 * g);
+        ctx.scale(h.facing, 1);
+        ctx.drawImage(sprite.canvas, -drawW / 2, -spriteH, drawW, spriteH);
+        ctx.restore();
+      }
+    }
+
     ctx.save();
     // Anchor at boots on ground line so squash, stretch & lean pivot naturally from feet
     ctx.translate(0, h.h / 2 + 2 - runBob - floatBob);
-    ctx.scale((h.squashX - breathe - strideStretch * 0.5) * h.facing, h.squashY + breathe + strideStretch);
-    ctx.rotate(moveTilt + strideRock + attackKick);
+    ctx.scale(
+      (h.squashX - breathe - strideStretch * 0.5 - airStretch * 0.4) * h.facing,
+      h.squashY + breathe + strideStretch + airStretch
+    );
+    ctx.rotate(moveTilt + strideRock + airPitch + attackKick);
 
     // Subtle colored drop-shadow rim so enemy vs ally silhouettes pop cleanly against cathedral stonework
     ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
@@ -2083,6 +2600,46 @@ function drawHero(
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+
+    // Signature Directional Attack Slash Arc / Muzzle Flare when attacking!
+    if (h.recoilTimer > 0) {
+      ctx.save();
+      ctx.translate(0, -10);
+      ctx.rotate(h.aimAngle);
+      const tNorm = Math.min(1, h.recoilTimer / 0.14);
+      ctx.globalAlpha = tNorm * 0.9;
+      if (h.heroId === 'marrow' || h.heroId === 'vorg' || h.heroId === 'xylar') {
+        const arcCol =
+          h.heroId === 'marrow' ? '#34D399' : h.heroId === 'vorg' ? '#C084FC' : h.cloakCritReady ? '#FDE047' : '#38BDF8';
+        ctx.strokeStyle = arcCol;
+        ctx.lineWidth = h.heroId === 'marrow' ? 7 : 5;
+        ctx.beginPath();
+        ctx.arc(10, 0, h.heroId === 'marrow' ? 46 : 38, -0.95, 0.95);
+        ctx.stroke();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(12, 0, h.heroId === 'marrow' ? 43 : 35, -0.7, 0.7);
+        ctx.stroke();
+      } else {
+        // Ranged muzzle / spell burst cone
+        const mCol =
+          h.heroId === 'vespra'
+            ? '#84CC16'
+            : h.heroId === 'vale'
+              ? '#FDE047'
+              : def.accentColor;
+        ctx.fillStyle = mCol;
+        ctx.beginPath();
+        ctx.moveTo(26, 0);
+        ctx.lineTo(44 + tNorm * 10, -7);
+        ctx.lineTo(39, 0);
+        ctx.lineTo(44 + tNorm * 10, 7);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
 
     // Precision 360-degree Aim Direction Pip for the local player
     if (h.isPlayer) {
@@ -2135,17 +2692,97 @@ function drawHero(
       case 'caldris':
         drawCaldrisBody(ctx, h, flash, teamCol, time);
         break;
+      case 'vespra':
+        drawVespraBody(ctx, h, flash, teamCol, stride, time);
+        break;
+      case 'vale':
+        drawValeBody(ctx, h, flash, teamCol, stride, time);
+        break;
     }
     ctx.restore();
   }
 
-  // Active Shield Halo
+  // Active Status Effect Animations: Venom DoT Bubbles & Solar Burn Flames
+  if (h.venomStacks > 0) {
+    ctx.save();
+    const drops = Math.min(5, h.venomStacks + 1);
+    for (let i = 0; i < drops; i++) {
+      const vp = (time * 1.9 + i * (1 / drops) + phaseSeed) % 1;
+      const vx = Math.sin(time * 4 + i * 2.2) * 20;
+      const vy = 16 - vp * (spriteH * 0.88);
+      ctx.fillStyle = i % 2 === 0 ? '#84CC16' : '#BEF264';
+      ctx.globalAlpha = (1 - vp) * 0.9;
+      ctx.beginPath();
+      ctx.arc(vx, vy, 3.2 + (i % 2), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  if (h.burnTimer > 0) {
+    ctx.save();
+    for (let i = 0; i < 4; i++) {
+      const fp = (time * 2.8 + i * 0.25 + phaseSeed) % 1;
+      const fx = Math.cos(time * 5 + i * 1.7) * 18;
+      const fy = 12 - fp * (spriteH * 0.85);
+      ctx.fillStyle = i % 2 === 0 ? '#FBBF24' : '#F97316';
+      ctx.globalAlpha = (1 - fp) * 0.92;
+      ctx.beginPath();
+      ctx.moveTo(fx, fy - 5);
+      ctx.lineTo(fx + 3.5, fy + 2);
+      ctx.lineTo(fx - 3.5, fy + 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Active Shield Halo (rotating runic barrier arcs)
   if (h.shield > 1) {
-    ctx.strokeStyle = '#67E8F9';
-    ctx.lineWidth = 2.6;
+    ctx.save();
+    const sr = Math.max(h.w, h.h) * 0.78;
+    ctx.strokeStyle = 'rgba(103, 232, 249, 0.45)';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(0, -10, Math.max(h.w, h.h) * 0.78, 0, Math.PI * 2);
+    ctx.arc(0, -10, sr, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.strokeStyle = '#67E8F9';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      const a = time * 2.6 + (i * Math.PI * 2) / 3;
+      ctx.beginPath();
+      ctx.arc(0, -10, sr + 2, a, a + 0.85);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Endgame Ascension Crown (orbiting golden relic diamonds scaling with Ascension Infusions!)
+  const ascStacks =
+    (h.upgrades['asc_wrath'] ?? 0) +
+    (h.upgrades['asc_titan'] ?? 0) +
+    (h.upgrades['asc_alacrity'] ?? 0) +
+    (h.upgrades['asc_siege'] ?? 0);
+  if (ascStacks > 0) {
+    const gems = Math.min(5, ascStacks);
+    const crownY = h.h / 2 - spriteH - 2;
+    ctx.save();
+    for (let i = 0; i < gems; i++) {
+      const a = time * 2.4 + (i * Math.PI * 2) / gems;
+      const gx = Math.cos(a) * 22;
+      const gy = crownY + Math.sin(a) * 5;
+      ctx.fillStyle = '#FBBF24';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy - 4.5);
+      ctx.lineTo(gx + 3.5, gy);
+      ctx.lineTo(gx, gy + 4.5);
+      ctx.lineTo(gx - 3.5, gy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // Stun stars
@@ -3122,6 +3759,114 @@ function drawCaldrisBody(
   ctx.restore();
 }
 
+// 9. PLAGUE-CANTOR VESPRA (Hybrid · Primordial × Occult — DoT Venom Specialist)
+function drawVespraBody(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  flash: boolean,
+  teamCol: string,
+  stride: number,
+  time: number
+): void {
+  const f = h.facing;
+  const sway = -h.vx * 0.02 + Math.sin(time * 4.5) * 2;
+  ctx.fillStyle = flash ? '#FFFFFF' : '#1E293B';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(-15 + sway, 22);
+  ctx.lineTo(-11, -12);
+  ctx.lineTo(11, -12);
+  ctx.lineTo(15 + sway, 22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Plague doctor beak mask & emerald visor lenses
+  ctx.fillStyle = '#F8FAFC';
+  ctx.beginPath();
+  ctx.moveTo(-8, -20);
+  ctx.lineTo(f * 16, -15);
+  ctx.lineTo(-4, -12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#84CC16';
+  ctx.beginPath();
+  ctx.arc(f * 3, -18, 2.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = teamCol;
+  ctx.fillRect(-10, -4, 20, 4);
+
+  // Brass toxic censer staff
+  ctx.save();
+  ctx.rotate(h.aimAngle);
+  ctx.fillStyle = '#D97706';
+  ctx.fillRect(4 + stride * 0.1, -2.5, 22, 5);
+  ctx.fillStyle = '#84CC16';
+  ctx.beginPath();
+  ctx.arc(28, 0, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 10. SOLARION VALE (Hybrid · Sacred × Cyber — Astral Chronomancer)
+function drawValeBody(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  flash: boolean,
+  teamCol: string,
+  stride: number,
+  time: number
+): void {
+  const f = h.facing;
+  // Rotating golden sundial halo
+  ctx.save();
+  ctx.translate(0, -16);
+  ctx.rotate(time * 2);
+  ctx.strokeStyle = '#FBBF24';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = flash ? '#FFFFFF' : '#F8FAFC';
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.roundRect(-12, -12, 24, 26, 6);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = teamCol;
+  ctx.fillRect(-10, -3, 20, 4);
+
+  // Hooded astral helmet
+  ctx.fillStyle = '#1E293B';
+  ctx.beginPath();
+  ctx.arc(0, -20, 9.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#38BDF8';
+  ctx.fillRect(f > 0 ? 1 : -8, -22, 7, 4);
+
+  // Prism lance focus
+  ctx.save();
+  ctx.rotate(h.aimAngle);
+  ctx.fillStyle = '#FBBF24';
+  ctx.beginPath();
+  ctx.moveTo(36, 0);
+  ctx.lineTo(14 + stride * 0.1, -6);
+  ctx.lineTo(18 + stride * 0.1, 0);
+  ctx.lineTo(14 + stride * 0.1, 6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 /* =========================================================================
    OVERHEAD HUD, SUMMONS, PROJECTILES, AMBIENT MOTES & CROSSHAIR
    ========================================================================= */
@@ -3146,6 +3891,32 @@ function drawHeroOverheadHud(
     const sRatio = Math.min(1, h.shield / h.maxHp);
     ctx.fillStyle = '#67E8F9';
     ctx.fillRect(-barW / 2, y - 2.5, barW * sRatio, 2.5);
+  }
+
+  // Active DoT badges beside overhead HP bar (Venom stacks & Solar Burn)
+  let badgeX = barW / 2 + 5;
+  if (h.venomStacks > 0) {
+    ctx.font = '800 10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#BEF264';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.4;
+    const vText = `×${h.venomStacks}`;
+    ctx.strokeText(vText, badgeX, y + barH + 1);
+    ctx.fillText(vText, badgeX, y + barH + 1);
+    badgeX += 18;
+  }
+  if (h.burnTimer > 0) {
+    ctx.fillStyle = '#FBBF24';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(badgeX + 4, y - 1);
+    ctx.lineTo(badgeX + 8, y + barH + 1);
+    ctx.lineTo(badgeX, y + barH + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   }
 
   if (h.isPlayer) {
@@ -3181,8 +3952,18 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
   ctx.translate(s.x, s.y);
 
   if (s.kind === 'bull') {
-    // Holo-Seraph Charger Ram
+    // Holo-Seraph Charger Ram with galloping energy legs & forward ram shock-cone
+    const gallop = Math.sin(time * 22);
     ctx.globalAlpha = 0.92;
+    ctx.strokeStyle = '#FEF08A';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-14, 12);
+    ctx.lineTo(-18 + gallop * 8, 22);
+    ctx.moveTo(12, 12);
+    ctx.lineTo(16 - gallop * 8, 22);
+    ctx.stroke();
+
     ctx.fillStyle =
       s.hitFlashTimer > 0
         ? '#FFFFFF'
@@ -3192,11 +3973,11 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
     ctx.strokeStyle = '#FDE047';
     ctx.lineWidth = 2.8;
     ctx.beginPath();
-    ctx.roundRect(-26, -18, 52, 32, 10);
+    ctx.roundRect(-26, -18 + Math.abs(gallop) * 2.5, 52, 32, 10);
     ctx.fill();
     ctx.stroke();
 
-    // Swept hard-light wings & ramming prow
+    // Swept hard-light wings & forward ramming shock cone
     ctx.fillStyle = '#FDE047';
     ctx.beginPath();
     ctx.moveTo(s.facing * 20, -14);
@@ -3206,10 +3987,17 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
     ctx.fill();
     ctx.stroke();
 
+    ctx.strokeStyle = 'rgba(254, 240, 138, 0.65)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(s.facing * 18, 0, 26, s.facing > 0 ? -0.9 : Math.PI - 0.9, s.facing > 0 ? 0.9 : Math.PI + 0.9);
+    ctx.stroke();
+
     drawCompactBar(ctx, 0, -29, 46, 5, s.hp / s.maxHp, teamCol);
   } else if (s.kind === 'totem') {
-    // Korak's Skull Spirit Totem + Primordial Healing Ring
+    // Korak's Skull Spirit Totem + Expanding Primordial Healing Wave Ring
     const pulse = 0.5 + 0.5 * Math.sin(time * 5);
+    const wave = (time * 1.15) % 1;
     ctx.fillStyle = isBlue ? 'rgba(16, 185, 129, 0.14)' : 'rgba(244, 63, 94, 0.12)';
     ctx.strokeStyle = isBlue ? '#34D399' : '#FB7185';
     ctx.lineWidth = 2.2;
@@ -3218,9 +4006,16 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
     ctx.fill();
     ctx.globalAlpha = 0.55 + pulse * 0.35;
     ctx.stroke();
+
+    // Expanding healing pulse ring
+    ctx.globalAlpha = (1 - wave) * 0.7;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18 + wave * (s.radius - 18), 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // Carved Bone Totem Pillar with Stag Horns
+    // Carved Bone Totem Pillar with glowing spirit eyes
     ctx.fillStyle = s.hitFlashTimer > 0 ? '#FFFFFF' : '#FEF3C7';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 2.5;
@@ -3233,10 +4028,10 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
     ctx.fillRect(2, -11, 4, 4);
     drawCompactBar(ctx, 0, -30, 38, 4, s.life / s.maxLife, '#34D399');
   } else if (s.kind === 'drone') {
-    // Korak's Orbiting Ancestral Spirit Skull
-    ctx.fillStyle = 'rgba(52, 211, 153, 0.3)';
+    // Korak's Orbiting Ancestral Spirit Skull + spectral trail
+    ctx.fillStyle = 'rgba(52, 211, 153, 0.32)';
     ctx.beginPath();
-    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.arc(0, 0, 14 + Math.sin(time * 9) * 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#FEF3C7';
     ctx.strokeStyle = INK;
@@ -3256,9 +4051,9 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
 function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time: number): void {
   ctx.save();
   ctx.translate(p.x, p.y);
+  const angle = Math.atan2(p.vy, p.vx);
 
   if (p.kind === 'cleaver') {
-    const angle = Math.atan2(p.vy, p.vx);
     ctx.rotate(angle);
     ctx.strokeStyle = '#10B981';
     ctx.lineWidth = 8;
@@ -3270,9 +4065,107 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time
     ctx.beginPath();
     ctx.arc(2, 0, p.radius - 3, -0.95, 0.95);
     ctx.stroke();
-  } else if (p.kind === 'spear') {
-    const angle = Math.atan2(p.vy, p.vx);
+  } else if (p.kind === 'venom_dart') {
+    // Plague-Cantor Vespra's Venom Needle Dart with toxic comet tail
     ctx.rotate(angle);
+    const tGrad = ctx.createLinearGradient(-28, 0, 12, 0);
+    tGrad.addColorStop(0, 'rgba(132, 204, 22, 0)');
+    tGrad.addColorStop(1, 'rgba(132, 204, 22, 0.85)');
+    ctx.strokeStyle = tGrad;
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(-26, 0);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+
+    ctx.fillStyle = '#84CC16';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(15, 0);
+    ctx.lineTo(-6, -4.5);
+    ctx.lineTo(-2, 0);
+    ctx.lineTo(-6, 4.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ECFCCB';
+    ctx.fillRect(-1, -1.3, 9, 2.6);
+  } else if (p.kind === 'censer_bomb') {
+    // Spinning brass-and-emerald fuming Miasma Censer flask
+    ctx.rotate(time * 10);
+    ctx.fillStyle = 'rgba(132, 204, 22, 0.32)';
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius + 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#B45309';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#84CC16';
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (p.kind === 'prism_lance') {
+    // Solarion Vale's golden-cyan Prism Lance beam bolt
+    ctx.rotate(angle);
+    const lGrad = ctx.createLinearGradient(-34, 0, 18, 0);
+    lGrad.addColorStop(0, 'rgba(56, 189, 248, 0)');
+    lGrad.addColorStop(0.55, 'rgba(251, 191, 36, 0.78)');
+    lGrad.addColorStop(1, '#FEF08A');
+    ctx.strokeStyle = lGrad;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-34, 0);
+    ctx.lineTo(18, 0);
+    ctx.stroke();
+
+    ctx.fillStyle = '#FBBF24';
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(20, 0);
+    ctx.lineTo(-4, -5.5);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(-4, 5.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(-2, -1.6, 15, 3.2);
+  } else if (p.kind === 'solar_disc') {
+    // Spinning golden sundial astrolabe disc
+    ctx.rotate(time * 14);
+    ctx.fillStyle = 'rgba(251, 191, 36, 0.34)';
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius + 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FBBF24';
+    ctx.fillStyle = '#FEF08A';
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = '#0284C7';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-p.radius, 0);
+    ctx.lineTo(p.radius, 0);
+    ctx.moveTo(0, -p.radius);
+    ctx.lineTo(0, p.radius);
+    ctx.stroke();
+  } else if (p.kind === 'spear') {
+    ctx.rotate(angle);
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.5)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-34, 0);
+    ctx.lineTo(-10, 0);
+    ctx.stroke();
     ctx.fillStyle = '#FBBF24';
     ctx.strokeStyle = INK;
     ctx.lineWidth = 2;
@@ -3289,7 +4182,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time
   } else if (p.kind === 'soul_orb' || p.kind === 'singularity_orb') {
     ctx.fillStyle = `${p.color}44`;
     ctx.beginPath();
-    ctx.arc(0, 0, p.radius + 5, 0, Math.PI * 2);
+    ctx.arc(0, 0, p.radius + 6 + Math.sin(time * 16) * 1.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = p.color;
     ctx.strokeStyle = INK;
@@ -3311,10 +4204,9 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time
     ctx.strokeRect(-8, -4.5, 16, 9);
     ctx.fillStyle = '#FEF08A';
     ctx.beginPath();
-    ctx.arc(10, -4, 4.2, 0, Math.PI * 2);
+    ctx.arc(10, -4, 4.2 + Math.sin(time * 32) * 1.2, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind === 'biobeam') {
-    const angle = Math.atan2(p.vy, p.vx);
     ctx.rotate(angle);
     ctx.strokeStyle = p.color;
     ctx.lineWidth = 5.5;
@@ -3327,8 +4219,14 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time
     ctx.arc(2, 0, p.radius - 1, -0.7, 0.7);
     ctx.stroke();
   } else if (p.kind === 'mortar' || p.kind === 'missile' || p.kind === 'drone_kamikaze') {
-    const angle = Math.atan2(p.vy, p.vx);
     ctx.rotate(angle);
+    ctx.fillStyle = 'rgba(251, 146, 60, 0.45)';
+    ctx.beginPath();
+    ctx.moveTo(-p.radius, -4);
+    ctx.lineTo(-p.radius - 16, 0);
+    ctx.lineTo(-p.radius, 4);
+    ctx.closePath();
+    ctx.fill();
     ctx.fillStyle = p.color;
     ctx.strokeStyle = INK;
     ctx.lineWidth = 2.2;
@@ -3341,8 +4239,15 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time
     ctx.arc(-p.radius, 0, 3.8, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    const angle = Math.atan2(p.vy, p.vx);
     ctx.rotate(angle);
+    // Subtle luminous velocity comet tail on bolts/shots
+    ctx.strokeStyle = `${p.color}66`;
+    ctx.lineWidth = Math.max(2.2, p.radius * 0.75);
+    ctx.beginPath();
+    ctx.moveTo(-p.radius * 3.2, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+
     ctx.fillStyle = p.color;
     ctx.strokeStyle = INK;
     ctx.lineWidth = 1.8;

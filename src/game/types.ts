@@ -6,7 +6,9 @@ export type HeroId =
   | 'marrow'
   | 'vexia'
   | 'xylar'
-  | 'caldris';
+  | 'caldris'
+  | 'vespra'
+  | 'vale';
 
 export type Team = 'blue' | 'red';
 export type Difficulty = 'casual' | 'standard' | 'veteran';
@@ -26,6 +28,20 @@ export interface UpgradeNode {
   perRankText: string;
   capstoneText: string;
   icon: 'damage' | 'speed' | 'burst' | 'shield' | 'heal' | 'solar' | 'cooldown' | 'range' | 'special';
+}
+
+export type AscensionInfusionId = 'asc_wrath' | 'asc_titan' | 'asc_alacrity' | 'asc_siege';
+
+export interface AscensionInfusionDef {
+  id: AscensionInfusionId;
+  name: string;
+  aspect: TalentAspect;
+  baseCost: number;
+  costStep: number;
+  perStackText: string;
+  instantBonusText: string;
+  summary: string;
+  icon: UpgradeNode['icon'];
 }
 
 export interface AbilityMeta {
@@ -53,7 +69,11 @@ export interface AbilityMeta {
     | 'vortex'
     | 'cloak'
     | 'orbital'
-    | 'undead';
+    | 'undead'
+    | 'censer'
+    | 'contagion'
+    | 'flare'
+    | 'blink';
 }
 
 export interface HeroDefinition {
@@ -96,6 +116,8 @@ export interface ComputedHeroStats {
   primaryBonusRocket: boolean;
   primaryHeal: number;
   primaryHealSolar: number;
+  primaryDotDps: number;
+  primaryDotDuration: number;
   skill1Damage: number;
   skill1Cooldown: number;
   skill1Radius: number;
@@ -188,7 +210,7 @@ export interface HazardZoneEntity {
   id: string;
   ownerId: string;
   team: Team;
-  kind: 'orbital_smite' | 'singularity';
+  kind: 'orbital_smite' | 'singularity' | 'plague_cloud' | 'solar_flare';
   x: number;
   y: number;
   radius: number;
@@ -258,6 +280,16 @@ export interface HeroEntity {
   meltdownTimer: number;
   meltdownMaxTimer: number;
   hookedById: string | null;
+  venomStacks: number;
+  venomTimer: number;
+  venomDps: number;
+  venomOwnerId: string | null;
+  venomTickTimer: number;
+  burnTimer: number;
+  burnDps: number;
+  burnOwnerId: string | null;
+  burnTickTimer: number;
+  hasteTimer: number;
   squashX: number;
   squashY: number;
   walkCycle: number;
@@ -297,6 +329,15 @@ export interface DroidEntity {
   facing: 1 | -1;
   slowTimer: number;
   stunTimer: number;
+  venomStacks: number;
+  venomTimer: number;
+  venomDps: number;
+  venomOwnerId: string | null;
+  venomTickTimer: number;
+  burnTimer: number;
+  burnDps: number;
+  burnOwnerId: string | null;
+  burnTickTimer: number;
 }
 
 export interface TurretEntity {
@@ -375,7 +416,11 @@ export interface ProjectileEntity {
     | 'cleaver'
     | 'dagger'
     | 'soul_orb'
-    | 'singularity_orb';
+    | 'singularity_orb'
+    | 'venom_dart'
+    | 'censer_bomb'
+    | 'prism_lance'
+    | 'solar_disc';
   x: number;
   y: number;
   vx: number;
@@ -395,6 +440,9 @@ export interface ProjectileEntity {
   maxLife: number;
   color: string;
   lifestealRatio: number;
+  dotKind?: 'venom' | 'burn';
+  dotDps?: number;
+  dotDuration?: number;
 }
 
 export interface SummonEntity {

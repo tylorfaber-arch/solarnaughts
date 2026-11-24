@@ -171,7 +171,7 @@ export function TitleScreen({
             <span aria-hidden="true">·</span>
             <span>4 High-Impact Specializations + Overclock</span>
             <span aria-hidden="true">·</span>
-            <span>15–20 Min Matches</span>
+            <span>10–15 Min Matches</span>
           </div>
         </div>
 
@@ -182,7 +182,7 @@ export function TitleScreen({
               <div className="flex items-baseline gap-2.5">
                 <h2 className="font-display text-lg font-bold text-white">Choose Your Champion</h2>
                 <span className="text-xs text-slate-400">
-                  8 Unique Heroes · No Duplicates in 3v3
+                  10 Unique Heroes · No Duplicates in 3v3
                 </span>
               </div>
 
@@ -190,9 +190,9 @@ export function TitleScreen({
               <div className="flex items-center gap-1 p-0.5 rounded-lg bg-[#090D18] border border-slate-800 text-xs">
                 {(
                   [
-                    { key: 'all', label: 'All (8)' },
+                    { key: 'all', label: 'All (10)' },
                     { key: 'purist', label: 'Purists (4)' },
-                    { key: 'hybrid', label: 'Hybrids (4)' },
+                    { key: 'hybrid', label: 'Hybrids (6)' },
                   ] as const
                 ).map((tab) => (
                   <button
@@ -211,8 +211,8 @@ export function TitleScreen({
               </div>
             </div>
 
-            {/* 4x2 Portrait Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {/* 5x2 Portrait Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {visibleHeroes.map((hero) => {
                 const isSelected = hero.id === selectedHero;
                 const isTaken = mode === 'online' && takenInRoom.has(hero.id);

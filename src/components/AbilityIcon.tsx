@@ -300,6 +300,41 @@ export function AbilitySvgIcon({
           <path d="M7 8.5l3 2M17 8.5l-3 2M12 15v2" />
         </svg>
       );
+    case 'censer':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 3h6M10 3v4l-5 8a4 4 0 0 0 3.4 6h7.2a4 4 0 0 0 3.4-6l-5-8V3" />
+          <circle cx="10" cy="15" r="1.2" fill="currentColor" />
+          <circle cx="14" cy="17" r="1" fill="currentColor" />
+          <path d="M7 13h10" opacity="0.6" />
+        </svg>
+      );
+    case 'contagion':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3.5" />
+          <path d="M12 2v5M12 17v5M2 12h5M17 12h5M4.9 4.9l3.6 3.6M15.5 15.5l3.6 3.6M19.1 4.9l-3.6 3.6M8.5 15.5l-3.6 3.6" />
+          <circle cx="12" cy="3" r="1.3" fill="currentColor" />
+          <circle cx="21" cy="12" r="1.3" fill="currentColor" />
+          <circle cx="3" cy="12" r="1.3" fill="currentColor" />
+        </svg>
+      );
+    case 'flare':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="4.5" />
+          <path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22M4.8 4.8l2.5 2.5M16.7 16.7l2.5 2.5M19.2 4.8l-2.5 2.5M7.3 16.7l-2.5 2.5" />
+        </svg>
+      );
+    case 'blink':
+      return (
+        <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 17l5-5-5-5" opacity="0.45" />
+          <path d="M10 17l5-5-5-5" opacity="0.75" />
+          <path d="M16 17l5-5-5-5" />
+          <circle cx="19" cy="5" r="1.5" fill="currentColor" />
+        </svg>
+      );
   }
 }
 

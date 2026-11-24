@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Lock, X } from 'lucide-react';
 import {
+  ASCENSION_INFUSIONS,
+  canForgeAscension,
   canForgeTalent,
+  getAscensionTotalStacks,
   getForgedRowStatus,
   getTalentForgeCost,
   HERO_MAP,
@@ -105,13 +108,129 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
 
   const popoverPos = hoverTarget ? computePopoverStyle(hoverTarget.rect) : null;
 
-  const { forgedRows, totalForged, overclockUnlocked } = getForgedRowStatus(
+  const { forgedRows, totalForged, overclockUnlocked, allTalentsMaxed } = getForgedRowStatus(
     hud.player.upgrades,
     hud.player.heroId
   );
   const nextForgeCost = getTalentForgeCost(hud.player.upgrades, hud.player.heroId);
+  const totalAscStacks = getAscensionTotalStacks(hud.player.upgrades);
 
   const forgedList = heroDef.upgrades.filter((u) => (hud.player.upgrades[u.id] ?? 0) > 0);
+  const activeAscensions = ASCENSION_INFUSIONS.filter((inf) => (hud.player.upgrades[inf.id] ?? 0) > 0);
+
+  const ascensionSection = (
+    <div
+      className={`rounded-xl border p-4 flex flex-col gap-3 ${
+        allTalentsMaxed
+          ? 'border-amber-400/70 bg-gradient-to-br from-[#161C2F] via-[#101626] to-[#1A1610]'
+          : overclockUnlocked
+            ? 'border-amber-500/35 bg-[#0C1220]'
+            : 'border-slate-800/80 bg-[#080B14]/80'
+      }`}
+    >
+      <div className="flex items-baseline justify-between gap-3 flex-wrap">
+        <div className="flex items-baseline gap-2.5 flex-wrap">
+          <h3 className="font-display text-sm font-bold text-amber-300">
+            {allTalentsMaxed
+              ? 'Ascension Reliquary · Full Build Reached'
+              : 'Ascension Reliquary · Endless Relic Sinks'}
+          </h3>
+          <span className="text-xs text-slate-400">
+            {overclockUnlocked
+              ? 'Repeatable permanent infusions with instant combat & siege payoffs'
+              : 'Unlocks after forging all 4 Core Rows'}
+          </span>
+        </div>
+        <span className="font-mono-num text-[11px] font-semibold text-amber-300/90 whitespace-nowrap">
+          {overclockUnlocked
+            ? totalAscStacks > 0
+              ? `${totalAscStacks} Infusion${totalAscStacks === 1 ? '' : 's'} Active`
+              : 'Ready to Infuse'
+            : `${forgedRows.size}/4 Rows Forged`}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+        {ASCENSION_INFUSIONS.map((inf) => {
+          const check = canForgeAscension(
+            hud.player.upgrades,
+            hud.player.heroId,
+            inf,
+            hud.player.solar
+          );
+          const asp = ASPECT_STYLE[inf.aspect];
+          const locked = check.reason === 'locked';
+
+          return (
+            <button
+              key={inf.id}
+              type="button"
+              onClick={() => {
+                if (check.allowed) onBuyUpgrade(inf.id);
+              }}
+              aria-disabled={!check.allowed}
+              className={`text-left p-3 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
+                locked
+                  ? 'border-slate-800/70 bg-[#070A12] opacity-50 cursor-not-allowed'
+                  : check.allowed
+                    ? `${asp.border} bg-[#131B2E] hover:bg-[#1B2742] cursor-pointer active:scale-[0.99]`
+                    : 'border-slate-800/90 bg-[#0B101C] opacity-85 cursor-default'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-[#080B14] border border-slate-700"
+                    style={{ color: asp.color }}
+                  >
+                    <UpgradeSvgIcon icon={inf.icon} className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="font-display text-xs font-bold text-white leading-tight truncate">
+                      {inf.name}
+                    </div>
+                    <div className="text-[10px] font-semibold" style={{ color: asp.color }}>
+                      Endless Stack
+                    </div>
+                  </div>
+                </div>
+                {check.stacks > 0 ? (
+                  <span className="font-mono-num text-xs font-bold text-amber-300 shrink-0">
+                    ×{check.stacks}
+                  </span>
+                ) : locked ? (
+                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] font-mono-num text-slate-200 leading-snug">
+                  {inf.perStackText}
+                </p>
+                <p className="text-[10.5px] text-amber-200/90 leading-snug">
+                  ★ {inf.instantBonusText}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between pt-1.5 border-t border-slate-800/80 text-[11px]">
+                <span className="text-slate-400">
+                  {locked ? 'Forge 4 Rows' : 'Infuse Now'}
+                </span>
+                <span
+                  className={`flex items-center gap-1 font-mono-num font-bold ${
+                    check.allowed ? 'text-amber-300' : 'text-slate-500'
+                  }`}
+                >
+                  <SolarCrystalIcon className="w-3.5 h-3.5" />
+                  {check.cost}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -146,9 +265,19 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                 </span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
-                Choose <strong className="text-amber-300">1 high-impact Specialization per row</strong> — every pick activates its ★ Capstone immediately · Next Forge:{' '}
-                <span className="font-mono-num text-amber-300 font-semibold">{nextForgeCost} Relic</span> · Press{' '}
-                <span className="font-mono-num text-slate-200">B</span> to close
+                {allTalentsMaxed ? (
+                  <>
+                    All 12 Talents forged — spend excess Relic on{' '}
+                    <strong className="text-amber-300">Endless Ascension Infusions</strong> · Press{' '}
+                    <span className="font-mono-num text-slate-200">B</span> to close
+                  </>
+                ) : (
+                  <>
+                    Choose <strong className="text-amber-300">1 high-impact Specialization per row</strong> — every pick activates its ★ Capstone immediately · Next Forge:{' '}
+                    <span className="font-mono-num text-amber-300 font-semibold">{nextForgeCost} Relic</span> · Press{' '}
+                    <span className="font-mono-num text-slate-200">B</span> to close
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -253,6 +382,14 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                       <span className="text-[10px] text-amber-300/90 shrink-0">{u.archetype}</span>
                     </div>
                   ))}
+                  {activeAscensions.map((inf) => (
+                    <div key={inf.id} className="flex items-baseline justify-between gap-2 text-[11px]">
+                      <span className="text-amber-300 font-semibold truncate">◆ {inf.name}</span>
+                      <span className="font-mono-num text-[10px] text-emerald-300 shrink-0">
+                        ×{hud.player.upgrades[inf.id]}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
@@ -275,8 +412,9 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
             </div>
           </div>
 
-          {/* Right Main Lattice: 4 Rows x 3 Nodes with Luminous Circuit Conduits */}
+          {/* Right Main Lattice: 4 Rows x 3 Nodes + Endless Ascension Reliquary */}
           <div className="lg:col-span-9 p-5 flex flex-col gap-4">
+            {allTalentsMaxed && ascensionSection}
             {ROW_ORDER.map((row) => {
               const nodes = heroDef.upgrades.filter((u) => u.row === row.key);
               const abilitySlot = getRowAbilitySlot(row.key);
@@ -467,6 +605,7 @@ export function SkillTreeModal({ hud, onBuyUpgrade, onClose }: SkillTreeModalPro
                 </div>
               );
             })}
+            {!allTalentsMaxed && ascensionSection}
           </div>
         </div>
       </div>

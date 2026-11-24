@@ -47,6 +47,8 @@ const VALID_HEROES = new Set<HeroId>([
   'vexia',
   'xylar',
   'caldris',
+  'vespra',
+  'vale',
 ]);
 const VALID_DIFFS = new Set<Difficulty>(['casual', 'standard', 'veteran']);
 

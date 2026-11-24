@@ -1,5 +1,11 @@
 import { gameAudio } from './audio';
-import { canForgeTalent, computeHeroStats, HERO_MAP } from './heroes';
+import {
+  ASCENSION_INFUSIONS,
+  canForgeAscension,
+  canForgeTalent,
+  computeHeroStats,
+  HERO_MAP,
+} from './heroes';
 import { BASE_ZONES, GRAVITY, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
 import type {
   ClientToServerMessage,
@@ -645,7 +651,8 @@ export class GameEngine {
     const meltMult = h.meltdownTimer > 0 ? stats.skill2SpeedMult : 1;
     const cloakMult = h.cloakTimer > 0 ? stats.skill2SpeedMult : 1;
     const rotMult = h.rotTimer > 0 ? stats.skill2SpeedMult : 1;
-    const targetVx = pkt.moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult;
+    const hasteMult = h.hasteTimer > 0 ? stats.skill2SpeedMult : 1;
+    const targetVx = pkt.moveDir * stats.moveSpeed * slowMult * spinMult * meltMult * cloakMult * rotMult * hasteMult;
     const accel = kin.grounded ? 2600 : 1750;
 
     if (pkt.moveDir !== 0) {
@@ -897,6 +904,16 @@ export class GameEngine {
           meltdownTimer: sh.meltdownTimer,
           meltdownMaxTimer: sh.meltdownMaxTimer,
           hookedById: sh.hookedById,
+          venomStacks: sh.venomStacks ?? 0,
+          venomTimer: sh.venomTimer ?? 0,
+          venomDps: 0,
+          venomOwnerId: null,
+          venomTickTimer: 0.4,
+          burnTimer: sh.burnTimer ?? 0,
+          burnDps: 0,
+          burnOwnerId: null,
+          burnTickTimer: 0.4,
+          hasteTimer: sh.hasteTimer ?? 0,
           squashX: 1,
           squashY: 1,
           walkCycle: sh.walkCycle,
@@ -948,6 +965,10 @@ export class GameEngine {
         existing.meltdownTimer = sh.meltdownTimer;
         existing.meltdownMaxTimer = sh.meltdownMaxTimer;
         existing.hookedById = sh.hookedById;
+        existing.venomStacks = sh.venomStacks ?? 0;
+        existing.venomTimer = sh.venomTimer ?? 0;
+        existing.burnTimer = sh.burnTimer ?? 0;
+        existing.hasteTimer = sh.hasteTimer ?? 0;
         existing.recoilTimer = sh.recoilTimer;
         existing.kills = sh.kills;
         existing.deaths = sh.deaths;
@@ -1061,6 +1082,15 @@ export class GameEngine {
           grounded: true,
           slowTimer: 0,
           stunTimer: 0,
+          venomStacks: sd.venomStacks ?? 0,
+          venomTimer: (sd.venomStacks ?? 0) > 0 ? 2 : 0,
+          venomDps: 0,
+          venomOwnerId: null,
+          venomTickTimer: 0.4,
+          burnTimer: sd.burnTimer ?? 0,
+          burnDps: 0,
+          burnOwnerId: null,
+          burnTickTimer: 0.4,
         });
         this.remoteDroidTargets.set(sd.id, { x: sd.x, y: sd.y, vx: sd.vx, vy: sd.vy });
       } else {
@@ -1076,6 +1106,9 @@ export class GameEngine {
         ex.tier = sd.tier;
         ex.facing = sd.facing;
         ex.hitFlashTimer = sd.hitFlashTimer;
+        ex.venomStacks = sd.venomStacks ?? 0;
+        ex.venomTimer = (sd.venomStacks ?? 0) > 0 ? 2 : 0;
+        ex.burnTimer = sd.burnTimer ?? 0;
       }
     }
     for (const id of this.mirrorDroids.keys()) {
@@ -1201,76 +1234,120 @@ export class GameEngine {
   private processFxEvents(events: SimFxEvent[]): void {
     const me = this.getLocalPlayerHero();
     const isNear = (x: number, y: number, d = 680) => !me || Math.hypot(me.x - x, me.y - y) < d;
+    const distVol = (x: number, y: number, mine: boolean, maxDist = 780): number => {
+      if (mine) return 1;
+      if (!me) return 0.45;
+      const d = Math.hypot(me.x - x, me.y - y);
+      if (d >= maxDist) return 0;
+      return Math.max(0.18, (1 - d / maxDist) * 0.52);
+    };
 
     for (const ev of events) {
       if (ev.kind === 'shoot') {
-        if (ev.ownerId === this.playerEntityId) {
-          if (ev.heroId === 'marrow') gameAudio.shootCleaver();
-          else if (ev.heroId === 'seraph') gameAudio.shootRadiant();
-          else if (ev.heroId === 'vexia') gameAudio.shootRevolver();
-          else if (ev.heroId === 'vorg' || ev.heroId === 'xylar') gameAudio.shootSonic();
-          else if (ev.heroId === 'bastion') gameAudio.shootMortar();
-          else gameAudio.shootBioBeam();
+        const mine = ev.ownerId === this.playerEntityId;
+        const vol = distVol(ev.x, ev.y, mine, 680);
+        if (vol > 0) {
+          if (ev.heroId === 'marrow') gameAudio.shootCleaver(vol);
+          else if (ev.heroId === 'seraph') gameAudio.shootRadiant(vol);
+          else if (ev.heroId === 'vexia') gameAudio.shootRevolver(vol);
+          else if (ev.heroId === 'vorg') gameAudio.shootSonic(vol);
+          else if (ev.heroId === 'xylar') gameAudio.shootPlasmaDagger(vol);
+          else if (ev.heroId === 'bastion') gameAudio.shootMortar(vol);
+          else if (ev.heroId === 'caldris') gameAudio.shootSoulRail(vol);
+          else if (ev.heroId === 'vespra') gameAudio.shootVenom(vol);
+          else if (ev.heroId === 'vale') gameAudio.shootPrism(vol);
+          else gameAudio.shootBioBeam(vol);
         }
       } else if (ev.kind === 'ability') {
         const mine = ev.ownerId === this.playerEntityId;
+        const vol = distVol(ev.x, ev.y, mine, 820);
         if (ev.tag === 'hook') {
           this.spawnParticles(ev.x, ev.y, '#94A3B8', 8, 150, 'spark');
-          if (mine || isNear(ev.x, ev.y, 650)) gameAudio.hookLaunch();
+          if (vol > 0) gameAudio.hookLaunch(vol);
         } else if (ev.tag === 'hook_hit') {
           this.spawnParticles(ev.x, ev.y, '#34D399', 18, 240, 'spark');
-          if (mine || isNear(ev.x, ev.y, 700)) {
-            gameAudio.hookLatch();
-            this.hitstopTimer = 0.04;
-            this.addShake(8);
+          if (vol > 0) {
+            gameAudio.hookLatch(vol);
+            if (mine || isNear(ev.x, ev.y, 460)) {
+              this.hitstopTimer = 0.04;
+              this.addShake(mine ? 8 : 4.5);
+            }
           }
         } else if (ev.tag === 'rot') {
           this.spawnParticles(ev.x, ev.y, '#10B981', 16, 160, 'circle');
-          if (mine) gameAudio.blightRot();
-        } else if (ev.tag === 'spear' && mine) {
-          gameAudio.shootRadiant();
+          if (vol > 0) gameAudio.blightRot(vol);
+        } else if (ev.tag === 'spear' && vol > 0) {
+          gameAudio.shootRadiant(vol);
         } else if (ev.tag === 'aegis') {
           this.spawnParticles(ev.x, ev.y, '#FBBF24', 18, 220, 'spark');
-          if (mine || isNear(ev.x, ev.y)) gameAudio.totemDeploy();
+          if (vol > 0) gameAudio.aegisPulse(vol);
         } else if (ev.tag === 'vortex') {
           this.spawnParticles(ev.x, ev.y, '#818CF8', 14, 180, 'spark');
-          if (mine || isNear(ev.x, ev.y)) gameAudio.vortexPull();
+          if (vol > 0) gameAudio.vortexPull(vol);
         } else if (ev.tag === 'cloak') {
           this.spawnParticles(ev.x, ev.y, '#38BDF8', 12, 160, 'circle');
-          if (mine) gameAudio.cloakVanish();
+          if (vol > 0) gameAudio.cloakVanish(vol);
         } else if (ev.tag === 'orbital') {
           this.spawnRing(ev.x, ev.y, 110, '#2DD4BF');
-          if (mine || isNear(ev.x, ev.y, 750)) gameAudio.orbitalCharge();
+          if (vol > 0) gameAudio.orbitalCharge(vol);
         } else if (ev.tag === 'undead') {
           this.spawnParticles(ev.x, ev.y, '#2DD4BF', 16, 170, 'spark');
-          if (mine) gameAudio.droneSpawn();
-        } else if (ev.tag === 'dynamite' && mine) gameAudio.throwDynamite();
-        else if (ev.tag === 'bull') {
+          if (vol > 0) gameAudio.droneSpawn(vol);
+        } else if (ev.tag === 'dynamite' && vol > 0) {
+          gameAudio.throwDynamite(vol);
+        } else if (ev.tag === 'bull') {
           this.spawnParticles(ev.x, ev.y, '#38BDF8', 14, 180, 'spark');
-          if (mine) gameAudio.bullCharge();
+          if (vol > 0) gameAudio.bullCharge(vol);
         } else if (ev.tag === 'dash') {
           this.spawnParticles(ev.x, ev.y, '#A855F7', 14, 210, 'spark');
-          if (mine) gameAudio.hydroDash();
-        } else if (ev.tag === 'spin' && mine) gameAudio.whirlpool();
-        else if (ev.tag === 'bite') {
+          if (vol > 0) gameAudio.hydroDash(vol);
+        } else if (ev.tag === 'spin' && vol > 0) {
+          gameAudio.whirlpool(vol);
+        } else if (ev.tag === 'bite') {
           this.spawnParticles(ev.x, ev.y, '#FBBF24', 14, 180, 'spark');
-          if (mine) {
-            gameAudio.bite();
-            this.addShake(5);
+          if (vol > 0) {
+            gameAudio.bite(vol);
+            if (mine) this.addShake(5);
           }
-        } else if (ev.tag === 'meltdown' && (mine || isNear(ev.x, ev.y))) gameAudio.meltdownCharge();
-        else if (ev.tag === 'totem' && mine) gameAudio.totemDeploy();
-        else if (ev.tag === 'drone' && mine) gameAudio.droneSpawn();
+        } else if (ev.tag === 'meltdown' && vol > 0) {
+          gameAudio.meltdownCharge(vol);
+        } else if (ev.tag === 'totem' && vol > 0) {
+          gameAudio.totemDeploy(vol);
+        } else if (ev.tag === 'drone' && vol > 0) {
+          gameAudio.droneSpawn(vol);
+        } else if (ev.tag === 'censer') {
+          this.spawnParticles(ev.x, ev.y, '#84CC16', 14, 175, 'circle');
+          if (vol > 0) gameAudio.plagueCloud(vol);
+        } else if (ev.tag === 'contagion') {
+          this.spawnParticles(ev.x, ev.y, '#A3E635', 22, 260, 'spark');
+          this.spawnParticles(ev.x, ev.y, '#10B981', 12, 160, 'circle');
+          if (vol > 0) {
+            gameAudio.contagionBurst(vol);
+            if (mine) this.addShake(6.5);
+          }
+        } else if (ev.tag === 'flare') {
+          this.spawnParticles(ev.x, ev.y, '#F59E0B', 16, 200, 'spark');
+          if (vol > 0) gameAudio.solarFlare(vol);
+        } else if (ev.tag === 'blink') {
+          this.spawnParticles(ev.x, ev.y, '#38BDF8', 18, 230, 'spark');
+          this.spawnParticles(ev.x, ev.y, '#FDE047', 10, 170, 'circle');
+          if (vol > 0) {
+            gameAudio.chronoBlink(vol);
+            if (mine) this.addShake(4.5);
+          }
+        }
       } else if (ev.kind === 'explosion') {
         this.spawnRing(ev.x, ev.y, ev.radius, ev.color);
         this.spawnParticles(ev.x, ev.y, '#FDE047', ev.heavy ? 24 : 12, ev.heavy ? 320 : 210, 'spark');
         this.spawnParticles(ev.x, ev.y, ev.color, ev.heavy ? 16 : 8, 180, 'circle');
-        if (ev.ownerId === this.playerEntityId || isNear(ev.x, ev.y, 720)) {
-          gameAudio.explosion(ev.heavy);
+        const mine = ev.ownerId === this.playerEntityId;
+        const vol = distVol(ev.x, ev.y, mine, 860);
+        if (vol > 0) {
+          gameAudio.explosion(ev.heavy, vol);
           if (ev.heavy) {
             this.hitstopTimer = 0.05;
-            this.addShake(11);
-          } else if (ev.ownerId === this.playerEntityId) {
+            this.addShake(mine ? 11 : 6.5);
+          } else if (mine) {
             this.addShake(5.5);
           }
         }
@@ -1284,17 +1361,40 @@ export class GameEngine {
           this.spawnText(ev.x, ev.y, `+${ev.amount} Relic`, '#FBBF24', 0.95);
         }
       } else if (ev.kind === 'upgrade') {
-        this.spawnParticles(ev.x, ev.y, '#FBBF24', 18, 220, 'spark');
-        if (ev.heroEntityId === this.playerEntityId) gameAudio.upgradeBuy();
+        this.spawnRing(ev.x, ev.y, 76, '#FBBF24');
+        this.spawnParticles(ev.x, ev.y, '#FBBF24', 22, 240, 'spark');
+        this.spawnParticles(ev.x, ev.y, '#FEF08A', 10, 160, 'circle');
+        if (ev.heroEntityId === this.playerEntityId) {
+          const hero = this.getLocalPlayerHero();
+          const hasAsc = Boolean(
+            hero &&
+              ((hero.upgrades['asc_wrath'] ?? 0) > 0 ||
+                (hero.upgrades['asc_titan'] ?? 0) > 0 ||
+                (hero.upgrades['asc_alacrity'] ?? 0) > 0 ||
+                (hero.upgrades['asc_siege'] ?? 0) > 0)
+          );
+          gameAudio.upgradeBuy(hasAsc);
+        }
       } else if (ev.kind === 'jump') {
-        if (ev.doubleJump) this.spawnParticles(ev.x, ev.y, ev.color, 6, 110, 'circle');
+        this.spawnParticles(
+          ev.x,
+          ev.y,
+          ev.doubleJump ? ev.color : '#CBD5E1',
+          ev.doubleJump ? 9 : 5,
+          ev.doubleJump ? 130 : 80,
+          'circle'
+        );
+        if (ev.doubleJump) this.spawnRing(ev.x, ev.y, 34, ev.color);
         if (ev.heroEntityId === this.playerEntityId) gameAudio.jump(ev.doubleJump);
       } else if (ev.kind === 'jumppad') {
-        this.spawnParticles(ev.x, ev.y, ev.color, 12, 180, 'spark');
+        this.spawnRing(ev.x, ev.y, 58, ev.color);
+        this.spawnParticles(ev.x, ev.y, ev.color, 16, 220, 'spark');
+        this.spawnParticles(ev.x, ev.y, '#FEF08A', 8, 160, 'circle');
         if (ev.heroEntityId === this.playerEntityId) gameAudio.jumpPad();
       } else if (ev.kind === 'dropSlam') {
-        this.spawnParticles(ev.x, ev.y, '#F59E0B', 20, 240, 'spark');
-        this.spawnParticles(ev.x, ev.y, '#94A3B8', 10, 140, 'circle');
+        this.spawnRing(ev.x, ev.y, 88, '#F59E0B');
+        this.spawnParticles(ev.x, ev.y, '#F59E0B', 24, 260, 'spark');
+        this.spawnParticles(ev.x, ev.y, '#94A3B8', 12, 160, 'circle');
         if (ev.heroEntityId === this.playerEntityId) {
           gameAudio.dropPodSlam();
           this.addShake(9);
@@ -1495,9 +1595,13 @@ export class GameEngine {
 
     const stats = computeHeroStats(player.heroId, player.upgrades, player.bonusMaxHp);
     const def = HERO_MAP[player.heroId];
-    const affordableUpgrades = def.upgrades.filter(
+    const affordableTalents = def.upgrades.filter(
       (u) => canForgeTalent(player.upgrades, player.heroId, u, player.solar).allowed
     ).length;
+    const affordableAscensions = ASCENSION_INFUSIONS.filter(
+      (inf) => canForgeAscension(player.upgrades, player.heroId, inf, player.solar).allowed
+    ).length;
+    const affordableUpgrades = affordableTalents + affordableAscensions;
     const takenHumanHeroes: HeroId[] =
       this.mode === 'solo' && this.localSim
         ? this.localSim.getHumanTakenHeroes()

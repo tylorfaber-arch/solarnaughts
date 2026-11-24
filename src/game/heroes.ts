@@ -1,4 +1,11 @@
-import type { ComputedHeroStats, HeroDefinition, HeroId, SkillRowKey, UpgradeNode } from './types.ts';
+import type {
+  AscensionInfusionDef,
+  ComputedHeroStats,
+  HeroDefinition,
+  HeroId,
+  SkillRowKey,
+  UpgradeNode,
+} from './types.ts';
 
 export const KEY_ART_URL = '/src/assets/images/citadel_title_keyart_1795462454803.jpg';
 
@@ -10,6 +17,8 @@ const MARROW_PORTRAIT = '/src/assets/images/hero_marrowhook_1795462456608.jpg';
 const VEXIA_PORTRAIT = '/src/assets/images/hero_vexia_1795462455518.jpg';
 const XYLAR_PORTRAIT = '/src/assets/images/hero_xylar_1795462456090.jpg';
 const CALDRIS_PORTRAIT = '/src/assets/images/hero_caldris_1795462456859.jpg';
+const VESPRA_PORTRAIT = '/src/assets/images/hero_vespra_1795485514494.jpg';
+const VALE_PORTRAIT = '/src/assets/images/hero_vale_1795485514159.jpg';
 
 export const HERO_LIST: HeroDefinition[] = [
   {
@@ -1620,6 +1629,408 @@ export const HERO_LIST: HeroDefinition[] = [
       },
     ],
   },
+  {
+    id: 'vespra',
+    name: 'Plague-Cantor Vespra',
+    codename: 'BLIGHT ALCHEMIST',
+    faction: 'Primordial Pact',
+    purity: 'hybrid',
+    disciplineLabel: 'Hybrid · Primordial × Sacred',
+    craftSummary: 'Gothic plague-doctor apothecary—stack virulent Venom toxins up to 5×, blanket lanes in Miasma clouds, and detonate Contagion waves.',
+    role: 'DoT Alchemist / Control',
+    mobilityLabel: 'Double Jump',
+    portrait: VESPRA_PORTRAIT,
+    accentColor: '#84CC16',
+    secondaryColor: '#F59E0B',
+    baseHp: 245,
+    baseSpeed: 282,
+    jumpForce: 562,
+    maxJumps: 2,
+    canHover: false,
+    hoverGravityScale: 1,
+    width: 32,
+    height: 48,
+    primary: {
+      name: 'Venom Needle-Dart',
+      keyLabel: 'LMB',
+      description: 'Fires pressurized glass toxin darts that apply stacking Venom DoT (up to 5 stacks over 4s).',
+      cooldown: 0.27,
+      icon: 'censer',
+    },
+    skill1: {
+      name: 'Miasma Censer',
+      keyLabel: 'Q / RMB',
+      description: 'Lobs a consecrated brass plague flask that shatters into a 4.5s toxic spore cloud, stacking Venom & slowing enemies.',
+      cooldown: 7.4,
+      icon: 'censer',
+    },
+    skill2: {
+      name: 'Contagion Detonation',
+      keyLabel: 'E / SHIFT',
+      description: 'Triggers a pandemic pulse that detonates active Venom stacks on nearby enemies for burst damage, spreads stacks, and heals Vespra.',
+      cooldown: 9.2,
+      icon: 'contagion',
+    },
+    upgrades: [
+      {
+        id: 'vp_p1',
+        row: 'primary',
+        aspect: 'primordial',
+        archetype: 'Virulent Toxin',
+        name: 'Vitriol Distillate',
+        cost: 140,
+        maxRank: 1,
+        summary: 'Concentrates dart venom for melting sustained DoT.',
+        perRankText: '+4.5 Venom DPS/stack',
+        capstoneText: 'Venom Needle-Darts apply 2 stacks per direct hit on enemy heroes.',
+        icon: 'damage',
+      },
+      {
+        id: 'vp_p2',
+        row: 'primary',
+        aspect: 'sacred',
+        archetype: 'Alchemist Marksman',
+        name: 'Twin Brass Syringe',
+        cost: 145,
+        maxRank: 1,
+        summary: 'Accelerates needle reload and dart reach.',
+        perRankText: '+20% fire rate · +70 range',
+        capstoneText: 'Venom Darts pierce enemy creep waves so entire lanes rot simultaneously.',
+        icon: 'speed',
+      },
+      {
+        id: 'vp_p3',
+        row: 'primary',
+        aspect: 'primordial',
+        archetype: 'Blight Control',
+        name: 'Corrosive Neurotoxin',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Extends Venom duration and slows poisoned foes.',
+        perRankText: '+1.5s Venom · +0.7s slow',
+        capstoneText: 'At 5 Venom stacks, darts deal +16 bonus acid burst damage per hit.',
+        icon: 'special',
+      },
+      {
+        id: 'vp_q1',
+        row: 'skill1',
+        aspect: 'primordial',
+        archetype: 'Plague Zone',
+        name: 'Cathedral Pestilence',
+        cost: 155,
+        maxRank: 1,
+        summary: 'Expands Miasma Censer cloud size and corrosive tick damage.',
+        perRankText: '+10 tick dmg · +36 radius',
+        capstoneText: 'Miasma Censer lasts +2.0s longer and applies 2 Venom stacks per pulse.',
+        icon: 'range',
+      },
+      {
+        id: 'vp_q2',
+        row: 'skill1',
+        aspect: 'sacred',
+        archetype: 'Apothecary Support',
+        name: 'Incense of Absolution',
+        cost: 145,
+        maxRank: 1,
+        summary: 'Blessed fumes soothe allied champions inside the cloud.',
+        perRankText: '+16 ally HP/pulse',
+        capstoneText: 'Miasma cloud also heals Vespra & allies inside it every 0.45s.',
+        icon: 'heal',
+      },
+      {
+        id: 'vp_q3',
+        row: 'skill1',
+        aspect: 'primordial',
+        archetype: 'Plague Zone',
+        name: 'Volatile Alembic',
+        cost: 145,
+        maxRank: 1,
+        summary: 'Shorter cooldown and immediate shatter impact.',
+        perRankText: '-1.5s Censer CD · +30 shatter',
+        capstoneText: 'Censer shatter stuns enemies inside the initial blast for 0.55s.',
+        icon: 'cooldown',
+      },
+      {
+        id: 'vp_e1',
+        row: 'skill2',
+        aspect: 'primordial',
+        archetype: 'Contagion Burst',
+        name: 'Pandemic Rupture',
+        cost: 165,
+        maxRank: 1,
+        summary: 'Amplifies Contagion detonation damage per Venom stack.',
+        perRankText: '+14 burst/stack · +45 radius',
+        capstoneText: 'Contagion no longer consumes Venom stacks—targets keep rotting after burst!',
+        icon: 'burst',
+      },
+      {
+        id: 'vp_e2',
+        row: 'skill2',
+        aspect: 'sacred',
+        archetype: 'Apothecary Support',
+        name: 'Sanguine Tincture',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Converts detonated blight into immense healing and ward.',
+        perRankText: '+18 heal/stack · +65 shield',
+        capstoneText: 'Contagion grants Vespra +65 Sanctuary Shield & heals nearby allies for +45 HP.',
+        icon: 'shield',
+      },
+      {
+        id: 'vp_e3',
+        row: 'skill2',
+        aspect: 'primordial',
+        archetype: 'Contagion Burst',
+        name: 'Epidemic Cascade',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Detonates blight far more frequently in extended skirmishes.',
+        perRankText: '-1.9s Contagion CD',
+        capstoneText: 'Infected enemies killed within 3s of Contagion explode for 60 AoE Venom damage.',
+        icon: 'cooldown',
+      },
+      {
+        id: 'vp_u1',
+        row: 'utility',
+        aspect: 'primordial',
+        archetype: 'Mobility',
+        name: 'Plague-Mask Stride',
+        cost: 130,
+        maxRank: 1,
+        summary: 'Swift footwork to kite brawlers while Venom ticks.',
+        perRankText: '+14% speed & jump',
+        capstoneText: 'Unlocks a 3rd Agile Air-Jump for effortless kiting across cathedral tiers.',
+        icon: 'speed',
+      },
+      {
+        id: 'vp_u2',
+        row: 'utility',
+        aspect: 'sacred',
+        archetype: 'Survivability',
+        name: 'Censer-Bearer’s Habit',
+        cost: 130,
+        maxRank: 1,
+        summary: 'Reinforces plague vestments and passive regen.',
+        perRankText: '+65 Max HP · +4 HP/s',
+        capstoneText: 'Siphons +12% healing from all Venom DoT ticks dealt to enemy heroes.',
+        icon: 'heal',
+      },
+      {
+        id: 'vp_u3',
+        row: 'utility',
+        aspect: 'sacred',
+        archetype: 'Relic Alchemy',
+        name: 'Alchemical Tithe',
+        cost: 120,
+        maxRank: 1,
+        summary: 'Distills steady Relic Essence from every blight.',
+        perRankText: '+1.5 Relic/sec',
+        capstoneText: 'Enemy creeps killed by Venom or Miasma award +4 bonus Relic Essence.',
+        icon: 'solar',
+      },
+    ],
+  },
+  {
+    id: 'vale',
+    name: 'Solarion Vale',
+    codename: 'CHRONO-DUELIST',
+    faction: 'Xeno-Tech Legion',
+    purity: 'hybrid',
+    disciplineLabel: 'Hybrid · Sacred × Cyber',
+    craftSummary: 'Gilded chronomancer marksman—ignite foes with Solar Burn DoT, scorch objectives with Sundial Flares, and outplay dives with Chrono-Blink.',
+    role: 'Burn Marksman / Blink',
+    mobilityLabel: 'Double Jump + Blink',
+    portrait: VALE_PORTRAIT,
+    accentColor: '#F59E0B',
+    secondaryColor: '#38BDF8',
+    baseHp: 235,
+    baseSpeed: 292,
+    jumpForce: 568,
+    maxJumps: 2,
+    canHover: false,
+    hoverGravityScale: 1,
+    width: 32,
+    height: 48,
+    primary: {
+      name: 'Prism Lance-Shot',
+      keyLabel: 'LMB',
+      description: 'Fires focused golden-cyan solar bolts that ignite enemies with a 3s Solar Burn DoT.',
+      cooldown: 0.25,
+      icon: 'flare',
+    },
+    skill1: {
+      name: 'Sundial Flare',
+      keyLabel: 'Q / RMB',
+      description: 'Hurls a spinning solar disc that erupts into a 3.2s scorching ring, burning heroes, creeps, and Reliquary Towers.',
+      cooldown: 7.6,
+      icon: 'flare',
+    },
+    skill2: {
+      name: 'Chrono-Blink',
+      keyLabel: 'E / SHIFT',
+      description: 'Blinks instantly toward your cursor, leaving an exploding Solar Afterimage behind while gaining 2.4s Haste & +40% fire rate.',
+      cooldown: 8.4,
+      icon: 'blink',
+    },
+    upgrades: [
+      {
+        id: 'vl_p1',
+        row: 'primary',
+        aspect: 'sacred',
+        archetype: 'Solar Scorch',
+        name: 'Helios Lens',
+        cost: 140,
+        maxRank: 1,
+        summary: 'Intensifies bolt impact and Solar Burn DoT damage.',
+        perRankText: '+4 bolt · +8 Burn DPS',
+        capstoneText: 'Hitting a burning enemy hero deals +14 bonus radiant shatter damage.',
+        icon: 'damage',
+      },
+      {
+        id: 'vl_p2',
+        row: 'primary',
+        aspect: 'cyber',
+        archetype: 'Chrono Marksman',
+        name: 'Temporal Accelerator',
+        cost: 145,
+        maxRank: 1,
+        summary: 'Accelerates Prism Lance fire rate and velocity.',
+        perRankText: '+22% fire rate · +75 range',
+        capstoneText: 'Prism Lance bolts pierce through lane creeps and enemy champions.',
+        icon: 'speed',
+      },
+      {
+        id: 'vl_p3',
+        row: 'primary',
+        aspect: 'cyber',
+        archetype: 'Chrono Marksman',
+        name: 'Refracted Prism',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Extends Solar Burn duration and siphons energy.',
+        perRankText: '+1.5s Burn · +14% lifesteal',
+        capstoneText: 'Every 3rd shot fires a twin-beam Prism Fork igniting a wide arc.',
+        icon: 'special',
+      },
+      {
+        id: 'vl_q1',
+        row: 'skill1',
+        aspect: 'sacred',
+        archetype: 'Solar Scorch',
+        name: 'Zenith Conflagration',
+        cost: 155,
+        maxRank: 1,
+        summary: 'Widens Sundial Flare scorch ring and burning DPS.',
+        perRankText: '+12 tick dmg · +34 radius',
+        capstoneText: 'Sundial Flare burns Reliquary Towers & Cores for +35% siege damage.',
+        icon: 'burst',
+      },
+      {
+        id: 'vl_q2',
+        row: 'skill1',
+        aspect: 'cyber',
+        archetype: 'Chrono Control',
+        name: 'Gravity Sundial',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Scorching light blinds and slows enemies trapped inside.',
+        perRankText: '+1.2s dur · heavy slow',
+        capstoneText: 'Initial Sundial eruption stuns caught enemies for 0.6s.',
+        icon: 'range',
+      },
+      {
+        id: 'vl_q3',
+        row: 'skill1',
+        aspect: 'cyber',
+        archetype: 'Solar Scorch',
+        name: 'Astrolabe Loop',
+        cost: 145,
+        maxRank: 1,
+        summary: 'Cuts Sundial Flare recharge time.',
+        perRankText: '-1.6s Flare CD',
+        capstoneText: 'Casting Sundial Flare grants Vale +55 Solar Shield immediately.',
+        icon: 'cooldown',
+      },
+      {
+        id: 'vl_e1',
+        row: 'skill2',
+        aspect: 'sacred',
+        archetype: 'Chrono Assassin',
+        name: 'Supernova Afterimage',
+        cost: 160,
+        maxRank: 1,
+        summary: 'Supercharges the exploding Solar Afterimage left at your origin.',
+        perRankText: '+42 blast dmg · +32 radius',
+        capstoneText: 'Afterimage explosion stuns nearby enemies for 0.65s and ignites Solar Burn.',
+        icon: 'burst',
+      },
+      {
+        id: 'vl_e2',
+        row: 'skill2',
+        aspect: 'cyber',
+        archetype: 'Chrono Marksman',
+        name: 'Time-Dilated Surge',
+        cost: 150,
+        maxRank: 1,
+        summary: 'Longer post-blink Chrono Haste and protective barrier.',
+        perRankText: '+1.4s Haste · +75 shield',
+        capstoneText: 'During Chrono Haste, Prism Lance fire rate jumps by +55%.',
+        icon: 'shield',
+      },
+      {
+        id: 'vl_e3',
+        row: 'skill2',
+        aspect: 'cyber',
+        archetype: 'Chrono Assassin',
+        name: 'Paradox Reset',
+        cost: 155,
+        maxRank: 1,
+        summary: 'Blinks far more often across platforms.',
+        perRankText: '-1.8s Blink CD · +80 range',
+        capstoneText: 'Hero kills immediately reset Chrono-Blink and restore +65 HP.',
+        icon: 'cooldown',
+      },
+      {
+        id: 'vl_u1',
+        row: 'utility',
+        aspect: 'cyber',
+        archetype: 'Mobility',
+        name: 'Gilded Greaves',
+        cost: 130,
+        maxRank: 1,
+        summary: 'Faster strafe speed and agile verticality.',
+        perRankText: '+14% speed & jump',
+        capstoneText: 'Unlocks a 3rd Radiant Air-Jump for sky-high sniping angles.',
+        icon: 'speed',
+      },
+      {
+        id: 'vl_u2',
+        row: 'utility',
+        aspect: 'sacred',
+        archetype: 'Survivability',
+        name: 'Solar Mantle',
+        cost: 130,
+        maxRank: 1,
+        summary: 'Hardens gilded armor against dive assassins.',
+        perRankText: '+65 Max HP · +10% armor',
+        capstoneText: 'Permanently grants +10% flat Sacred Armor and +4 HP/s regen.',
+        icon: 'shield',
+      },
+      {
+        id: 'vl_u3',
+        row: 'utility',
+        aspect: 'sacred',
+        archetype: 'Siege Marksman',
+        name: 'Chronicle of Gold',
+        cost: 120,
+        maxRank: 1,
+        summary: 'Steady Relic income and siege focus.',
+        perRankText: '+1.5 Relic/sec',
+        capstoneText: 'Deals +22% bonus Primary damage to Reliquary Towers & Ancient Cores.',
+        icon: 'solar',
+      },
+    ],
+  },
 ];
 
 export const HERO_MAP: Record<HeroId, HeroDefinition> = HERO_LIST.reduce(
@@ -1634,6 +2045,53 @@ export const TALENT_FORGE_TIERS = [220, 340, 480, 640] as const;
 export const OVERCLOCK_FORGE_COST = 800;
 const ALL_SKILL_ROWS: SkillRowKey[] = ['primary', 'skill1', 'skill2', 'utility'];
 
+export const ASCENSION_INFUSIONS: AscensionInfusionDef[] = [
+  {
+    id: 'asc_wrath',
+    name: 'Relic Overcharge',
+    aspect: 'sacred',
+    baseCost: 500,
+    costStep: 150,
+    perStackText: '+12% Primary & Ability Damage',
+    instantBonusText: 'Instant +65 Sanctuary Shield on forge',
+    summary: 'Permanently amplifies all weapon and ability damage and wraps you in a fresh battle shield.',
+    icon: 'damage',
+  },
+  {
+    id: 'asc_titan',
+    name: 'Immortal Vessel',
+    aspect: 'primordial',
+    baseCost: 500,
+    costStep: 150,
+    perStackText: '+85 Max HP · +2.5 HP/s Regen',
+    instantBonusText: 'Instant +140 HP heal on forge',
+    summary: 'Fortifies your vessel with permanent health and regeneration plus an immediate combat heal.',
+    icon: 'heal',
+  },
+  {
+    id: 'asc_alacrity',
+    name: 'Chrono Reliquary',
+    aspect: 'cyber',
+    baseCost: 550,
+    costStep: 175,
+    perStackText: '+8% Attack Speed · -7% Skill CD · +4% Speed',
+    instantBonusText: 'Instantly shaves 1.5s off active skill cooldowns',
+    summary: 'Accelerates fire rate, cooldown recovery, and movement speed (move speed caps at +24%).',
+    icon: 'cooldown',
+  },
+  {
+    id: 'asc_siege',
+    name: 'Cathedral Siegebreaker',
+    aspect: 'sacred',
+    baseCost: 600,
+    costStep: 175,
+    perStackText: '+18% Tower & Core Damage',
+    instantBonusText: 'Deploys 2 Elite Tier-6 Crusaders (Top & Bot)',
+    summary: 'Turns excess late-game Relic into relentless lane pressure and structure demolition.',
+    icon: 'burst',
+  },
+];
+
 export function getForgedRowStatus(
   upgrades: Record<string, number>,
   heroId: HeroId
@@ -1641,6 +2099,7 @@ export function getForgedRowStatus(
   forgedRows: Set<SkillRowKey>;
   totalForged: number;
   overclockUnlocked: boolean;
+  allTalentsMaxed: boolean;
 } {
   const def = HERO_MAP[heroId];
   const forgedRows = new Set<SkillRowKey>();
@@ -1655,7 +2114,47 @@ export function getForgedRowStatus(
     forgedRows,
     totalForged,
     overclockUnlocked: forgedRows.size >= ALL_SKILL_ROWS.length,
+    allTalentsMaxed: totalForged >= def.upgrades.length,
   };
+}
+
+export function getAscensionTotalStacks(upgrades: Record<string, number>): number {
+  let total = 0;
+  for (const inf of ASCENSION_INFUSIONS) {
+    total += Math.max(0, Math.floor(upgrades[inf.id] ?? 0));
+  }
+  return total;
+}
+
+export function getAscensionCost(
+  infusion: AscensionInfusionDef,
+  upgrades: Record<string, number>
+): number {
+  const stacks = Math.max(0, Math.floor(upgrades[infusion.id] ?? 0));
+  return infusion.baseCost + stacks * infusion.costStep;
+}
+
+export function canForgeAscension(
+  upgrades: Record<string, number>,
+  heroId: HeroId,
+  infusion: AscensionInfusionDef,
+  solar: number
+): {
+  allowed: boolean;
+  reason?: 'locked' | 'insufficient_relic';
+  cost: number;
+  stacks: number;
+} {
+  const { overclockUnlocked } = getForgedRowStatus(upgrades, heroId);
+  const stacks = Math.max(0, Math.floor(upgrades[infusion.id] ?? 0));
+  const cost = getAscensionCost(infusion, upgrades);
+  if (!overclockUnlocked) {
+    return { allowed: false, reason: 'locked', cost, stacks };
+  }
+  if (solar < cost) {
+    return { allowed: false, reason: 'insufficient_relic', cost, stacks };
+  }
+  return { allowed: true, cost, stacks };
 }
 
 export function getTalentForgeCost(
@@ -1724,6 +2223,8 @@ export function computeHeroStats(
     primaryBonusRocket: false,
     primaryHeal: 0,
     primaryHealSolar: 0,
+    primaryDotDps: 0,
+    primaryDotDuration: 0,
     skill1Damage: 48,
     skill1Cooldown: def.skill1.cooldown,
     skill1Radius: 84,
@@ -1967,6 +2468,95 @@ export function computeHeroStats(
     stats.jumpForce *= 1 + r('cd_u2') * 0.11;
     stats.infiniteHover = Boolean(capstones['cd_u2']);
     stats.passiveSolarPerSec += r('cd_u3') * 1.5;
+  } else if (heroId === 'vespra') {
+    stats.primaryDamage = 10 + r('vp_p1') * 3;
+    stats.primaryDotDps = 7.5 + r('vp_p1') * 4.5; // per stack (max 5 stacks!)
+    stats.primaryDotDuration = 4.0 + r('vp_p3') * 1.5;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('vp_p2') * 0.22);
+    stats.primaryRange = 460 + r('vp_p2') * 70;
+    stats.primaryProjectileSpeed = 860;
+    stats.primaryPierce = Boolean(capstones['vp_p2']);
+    stats.skill1Slow = 0.65 + r('vp_p3') * 0.7;
+
+    stats.skill1Damage = 15 + r('vp_q1') * 10; // per 0.45s miasma cloud pulse
+    stats.skill1Radius = 128 + r('vp_q1') * 36;
+    stats.skill1Duration = 4.5 + (capstones['vp_q1'] ? 2.0 : 0);
+    stats.skill1Heal = r('vp_q2') * 16;
+    stats.skill1Stun = capstones['vp_q3'] ? 0.55 : 0;
+    stats.skill1Cooldown = Math.max(4.0, def.skill1.cooldown - r('vp_q3') * 1.5);
+
+    stats.skill2Damage = 26 + r('vp_e1') * 14; // burst damage PER Venom stack!
+    stats.skill2Radius = 285 + r('vp_e1') * 45;
+    stats.skill2HealAlly = 18 + r('vp_e2') * 18; // self heal per stack detonated
+    stats.skill2SummonHp = r('vp_e2') * 65; // shield granted on cast
+    stats.skill2Cooldown = Math.max(4.8, def.skill2.cooldown - r('vp_e3') * 1.9);
+
+    stats.moveSpeed *= 1 + r('vp_u1') * 0.14;
+    stats.jumpForce *= 1 + r('vp_u1') * 0.11;
+    stats.extraJumps = capstones['vp_u1'] ? 1 : 0;
+    stats.maxHp += r('vp_u2') * 65;
+    stats.hpRegenPerSec += r('vp_u2') * 4.0;
+    stats.passiveSolarPerSec += r('vp_u3') * 1.5;
+  } else if (heroId === 'vale') {
+    stats.primaryDamage = 13 + r('vl_p1') * 4;
+    stats.primaryDotDps = 11 + r('vl_p1') * 8; // Solar Burn DPS
+    stats.primaryDotDuration = 3.0 + r('vl_p3') * 1.5;
+    stats.primaryCooldown = def.primary.cooldown / (1 + r('vl_p2') * 0.22);
+    stats.primaryRange = 475 + r('vl_p2') * 75;
+    stats.primaryProjectileSpeed = 930;
+    stats.primaryPierce = Boolean(capstones['vl_p2']);
+    stats.lifestealRatio = r('vl_p3') * 0.14;
+    stats.towerDamageMult = capstones['vl_u3'] ? 1.22 : 1;
+
+    stats.skill1Damage = 20 + r('vl_q1') * 12; // per 0.42s flare pulse
+    stats.skill1Radius = 118 + r('vl_q1') * 34;
+    stats.skill1Duration = 3.2 + r('vl_q2') * 1.2;
+    stats.skill1Slow = 0.4 + r('vl_q2') * 0.85;
+    stats.skill1Stun = capstones['vl_q2'] ? 0.6 : 0;
+    stats.skill1ShieldAfter = capstones['vl_q3'] ? 55 : 0;
+    stats.skill1Cooldown = Math.max(4.2, def.skill1.cooldown - r('vl_q3') * 1.6);
+
+    stats.skill2Damage = 58 + r('vl_e1') * 42; // Solar Afterimage explosion
+    stats.skill2Radius = 116 + r('vl_e1') * 32;
+    stats.skill2Duration = 2.4 + r('vl_e2') * 1.4; // Chrono Haste duration
+    stats.skill2SummonHp = 45 + r('vl_e2') * 75; // Blink shield
+    stats.skill2SpeedMult = 1.28;
+    stats.skill2Cooldown = Math.max(4.4, def.skill2.cooldown - r('vl_e3') * 1.8);
+
+    stats.moveSpeed *= 1 + r('vl_u1') * 0.14;
+    stats.jumpForce *= 1 + r('vl_u1') * 0.11;
+    stats.extraJumps = capstones['vl_u1'] ? 1 : 0;
+    stats.maxHp += r('vl_u2') * 65;
+    stats.flatArmor = capstones['vl_u2'] ? 0.1 : 0;
+    stats.hpRegenPerSec += r('vl_u2') * 4.0;
+    stats.passiveSolarPerSec += r('vl_u3') * 1.5;
+  }
+
+  // Endless Late-Game Ascension Infusion Scaling (Maxed-Gold Relic Sinks)
+  const wrathStacks = Math.max(0, Math.floor(ranks['asc_wrath'] ?? 0));
+  const titanStacks = Math.max(0, Math.floor(ranks['asc_titan'] ?? 0));
+  const alacrityStacks = Math.max(0, Math.floor(ranks['asc_alacrity'] ?? 0));
+  const siegeStacks = Math.max(0, Math.floor(ranks['asc_siege'] ?? 0));
+
+  if (wrathStacks > 0) {
+    const dmgMult = 1 + wrathStacks * 0.12;
+    stats.primaryDamage *= dmgMult;
+    stats.primaryDotDps *= dmgMult;
+    stats.skill1Damage *= dmgMult;
+    stats.skill2Damage *= dmgMult;
+  }
+  if (titanStacks > 0) {
+    stats.maxHp += titanStacks * 85;
+    stats.hpRegenPerSec += titanStacks * 2.5;
+  }
+  if (alacrityStacks > 0) {
+    stats.primaryCooldown = Math.max(0.085, stats.primaryCooldown / (1 + alacrityStacks * 0.08));
+    stats.skill1Cooldown = Math.max(1.8, stats.skill1Cooldown * Math.pow(0.93, alacrityStacks));
+    stats.skill2Cooldown = Math.max(2.4, stats.skill2Cooldown * Math.pow(0.93, alacrityStacks));
+    stats.moveSpeed *= 1 + Math.min(0.24, alacrityStacks * 0.04);
+  }
+  if (siegeStacks > 0) {
+    stats.towerDamageMult += siegeStacks * 0.18;
   }
 
   return stats;

@@ -97,6 +97,20 @@ export function buildAbilityTooltip(
       value: `${Math.round(stats.primaryRange)} px`,
       highlight: 'sky',
     });
+    if (stats.primaryDotDps > 0) {
+      lines.push({
+        label: heroId === 'vespra' ? 'Venom DoT / Stack' : 'Solar Burn DoT',
+        value: `${stats.primaryDotDps.toFixed(1)}/s × ${stats.primaryDotDuration.toFixed(1)}s`,
+        highlight: heroId === 'vespra' ? 'emerald' : 'gold',
+      });
+      if (heroId === 'vespra') {
+        lines.push({
+          label: 'Max 5× Stacks',
+          value: `${Math.round(stats.primaryDotDps * 5)} DPS`,
+          highlight: 'rose',
+        });
+      }
+    }
     if (stats.primaryHeal > 0) {
       lines.push({
         label: 'Ally Heal',
@@ -196,6 +210,19 @@ export function buildAbilityTooltip(
           highlight: 'emerald',
         });
       }
+    } else if (heroId === 'vespra') {
+      lines.push({ label: 'Cloud / Pulse', value: `${Math.round(stats.skill1Damage)} + Venom`, highlight: 'emerald' });
+      lines.push({ label: 'Cloud Radius', value: `${Math.round(stats.skill1Radius)} px`, highlight: 'sky' });
+      lines.push({ label: 'Duration', value: `${stats.skill1Duration.toFixed(1)}s`, highlight: 'neutral' });
+      lines.push({ label: 'Enemy Slow', value: `${stats.skill1Slow.toFixed(1)}s`, highlight: 'sky' });
+      if (stats.skill1Heal > 0) {
+        lines.push({ label: 'Ally Heal/Pulse', value: `+${Math.round(stats.skill1Heal)} HP`, highlight: 'emerald' });
+      }
+    } else if (heroId === 'vale') {
+      lines.push({ label: 'Scorch / Pulse', value: `${Math.round(stats.skill1Damage)} + Burn`, highlight: 'gold' });
+      lines.push({ label: 'Flare Radius', value: `${Math.round(stats.skill1Radius)} px`, highlight: 'sky' });
+      lines.push({ label: 'Duration', value: `${stats.skill1Duration.toFixed(1)}s`, highlight: 'neutral' });
+      lines.push({ label: 'Siege Effect', value: 'Burns Towers & Cores', highlight: 'rose' });
     }
   } else {
     cd = stats.skill2Cooldown;
@@ -256,6 +283,16 @@ export function buildAbilityTooltip(
       lines.push({ label: 'Bone-Borg HP', value: `${Math.round(stats.skill2SummonHp)}`, highlight: 'sky' });
       lines.push({ label: 'Borg Damage', value: `${Math.round(stats.skill2Damage)} / shot`, highlight: 'gold' });
       lines.push({ label: 'Self Shield', value: `+${Math.round(stats.skill2HealAlly)}`, highlight: 'sky' });
+    } else if (heroId === 'vespra') {
+      lines.push({ label: 'Burst / Stack', value: `${Math.round(stats.skill2Damage)} (max ${Math.round(stats.skill2Damage * 5)})`, highlight: 'rose' });
+      lines.push({ label: 'Pulse Radius', value: `${Math.round(stats.skill2Radius)} px`, highlight: 'sky' });
+      lines.push({ label: 'Heal / Stack', value: `+${Math.round(stats.skill2HealAlly)} HP`, highlight: 'emerald' });
+      lines.push({ label: 'Contagion', value: 'Spreads Venom to Nearby Foes', highlight: 'gold' });
+    } else if (heroId === 'vale') {
+      lines.push({ label: 'Afterimage Dmg', value: `${Math.round(stats.skill2Damage)}`, highlight: 'gold' });
+      lines.push({ label: 'Chrono Haste', value: `${stats.skill2Duration.toFixed(1)}s (+40% Fire)`, highlight: 'sky' });
+      lines.push({ label: 'Blink Shield', value: `+${Math.round(stats.skill2SummonHp)}`, highlight: 'emerald' });
+      lines.push({ label: 'Teleport', value: 'Instant Cursor Blink', highlight: 'neutral' });
     }
   }
 
@@ -322,6 +359,8 @@ export function buildUpgradeTooltip(
   check('Move Speed', before.moveSpeed, after.moveSpeed, (v) => `${Math.round(v)}`);
   check('Jump Force', before.jumpForce, after.jumpForce, (v) => `${Math.round(v)}`);
   check('Primary Damage', before.primaryDamage, after.primaryDamage);
+  check('DoT DPS', before.primaryDotDps, after.primaryDotDps, (v) => `${v.toFixed(1)}/s`);
+  check('DoT Duration', before.primaryDotDuration, after.primaryDotDuration, (v) => `${v.toFixed(1)}s`);
   check(
     'Attack Rate',
     1 / Math.max(0.05, before.primaryCooldown),

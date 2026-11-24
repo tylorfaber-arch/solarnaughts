@@ -38,6 +38,8 @@ const HERO_SPRITE_URLS: Record<HeroId, string> = {
   vexia: '/src/assets/images/sprite_vexia_1795469572384.jpg',
   xylar: '/src/assets/images/sprite_xylar_1795469572612.jpg',
   caldris: '/src/assets/images/sprite_caldris_1795469572613.jpg',
+  vespra: '/src/assets/images/sprite_vespra_1795485513446.jpg',
+  vale: '/src/assets/images/sprite_vale_1795485513074.jpg',
 };
 
 const WORLD_SPRITE_URLS = {

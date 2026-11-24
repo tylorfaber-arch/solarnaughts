@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Volume2, VolumeX, Pause, Copy, Check, Swords, Shield, Flame } from 'lucide-react';
-import { HERO_MAP } from '../game/heroes';
+import { ASCENSION_INFUSIONS, HERO_MAP } from '../game/heroes';
 import { JUMP_PADS, WORLD_H, WORLD_W } from '../game/map';
 import {
   ASPECT_META,
@@ -100,8 +100,9 @@ export function GameHud({
     },
   ];
 
-  // Purchased Talent Items for quick HUD inspection
+  // Purchased Talent Items & Endgame Ascension Infusions for quick HUD inspection
   const forgedNodes = heroDef.upgrades.filter((u) => (hud.player.upgrades[u.id] ?? 0) > 0);
+  const activeAscensions = ASCENSION_INFUSIONS.filter((inf) => (hud.player.upgrades[inf.id] ?? 0) > 0);
   const hoveredForgedNode = hoveredForgedId
     ? forgedNodes.find((u) => u.id === hoveredForgedId) ?? null
     : null;
@@ -441,9 +442,9 @@ export function GameHud({
       <div className="flex items-end justify-between gap-3">
         {/* Bottom Left: Active Forged Items Strip + Champion Unit Frame */}
         <div className="pointer-events-auto relative flex flex-col gap-1.5">
-          {/* Forged Talents Inventory Strip */}
-          {forgedNodes.length > 0 && (
-            <div className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-[#080B14]/94 border border-slate-800/90 w-fit max-w-[308px] flex-wrap">
+          {/* Forged Talents & Ascension Infusions Strip */}
+          {(forgedNodes.length > 0 || activeAscensions.length > 0) && (
+            <div className="relative flex items-center gap-1 px-2 py-1 rounded-lg bg-[#080B14]/94 border border-slate-800/90 w-fit max-w-[332px] flex-wrap">
               {forgedNodes.map((node) => {
                 const rank = hud.player.upgrades[node.id] ?? 0;
                 const maxed = rank >= node.maxRank;
@@ -463,6 +464,23 @@ export function GameHud({
                     <UpgradeSvgIcon icon={node.icon} className="w-3.5 h-3.5" />
                     <span className="absolute -bottom-0.5 -right-0.5 px-0.5 rounded-xs bg-[#070910] border border-amber-500/50 text-[8.5px] font-bold text-amber-300 leading-tight">
                       {maxed ? '★' : rank}
+                    </span>
+                  </div>
+                );
+              })}
+              {activeAscensions.map((inf) => {
+                const stacks = hud.player.upgrades[inf.id] ?? 0;
+                const asp = ASPECT_META[inf.aspect];
+                return (
+                  <div
+                    key={inf.id}
+                    title={`${inf.name} ×${stacks}: ${inf.perStackText}`}
+                    className={`relative w-7 h-7 rounded-md border ${asp.border} bg-amber-950/45 flex items-center justify-center cursor-help`}
+                    style={{ color: asp.color }}
+                  >
+                    <UpgradeSvgIcon icon={inf.icon} className="w-3.5 h-3.5" />
+                    <span className="absolute -bottom-0.5 -right-0.5 px-0.5 rounded-xs bg-[#070910] border border-amber-400 text-[8.5px] font-mono-num font-bold text-amber-300 leading-tight">
+                      ×{stacks}
                     </span>
                   </div>
                 );
