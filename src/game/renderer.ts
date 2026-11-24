@@ -17,6 +17,18 @@ import type {
   TurretEntity,
 } from './types';
 
+export interface EndCinematicRenderState {
+  active: boolean;
+  completed: boolean;
+  winner: Team;
+  localWon: boolean;
+  elapsed: number;
+  duration: number;
+  canSkip: boolean;
+  coreX: number;
+  coreY: number;
+}
+
 export interface RenderState {
   time: number;
   localTeam: Team;
@@ -40,6 +52,7 @@ export interface RenderState {
   hazards: HazardZoneEntity[];
   particles: Particle[];
   floatingTexts: FloatingText[];
+  endCinematic?: EndCinematicRenderState | null;
 }
 
 const INK = '#07090F';
@@ -139,7 +152,7 @@ export function renderArena(
 
   // 12. Ancient Cores & 2-Tier Reliquary Towers
   for (const core of state.cores) {
-    drawAncientCore(ctx, core, state.time, art.core);
+    drawAncientCore(ctx, core, state.time, art.core, state.endCinematic ?? null);
   }
   for (const turret of state.turrets) {
     drawReliquaryTower(ctx, turret, state.time, playerHero, art.tower);
@@ -169,7 +182,7 @@ export function renderArena(
     if (h.inDropPod) {
       drawDropPodSequence(ctx, h, state.time, art);
     } else if (h.alive) {
-      drawHero(ctx, h, state.time, state.localTeam, art.heroes[h.heroId]);
+      drawHero(ctx, h, state.time, state.localTeam, art.heroes[h.heroId], state.endCinematic ?? null);
     }
   }
 
@@ -250,9 +263,14 @@ export function renderArena(
   ctx.fillStyle = vig;
   ctx.fillRect(0, 0, width, height);
 
-  // 22. Tactical Aim Reticle
-  if (playerHero && playerHero.alive && !playerHero.inDropPod) {
+  // 22. Tactical Aim Reticle (hidden during cinematic Victory/Defeat sequence)
+  if (!state.endCinematic?.active && playerHero && playerHero.alive && !playerHero.inDropPod) {
     drawCrosshair(ctx, state.mouseScreenX, state.mouseScreenY, HERO_MAP[playerHero.heroId].accentColor);
+  }
+
+  // 23. Cinematic Victory / Defeat Widescreen Sequence Overlay
+  if (state.endCinematic && (state.endCinematic.active || state.endCinematic.completed)) {
+    drawEndCinematicOverlay(ctx, width, height, state.endCinematic, state.time);
   }
 
   ctx.restore();
@@ -1644,14 +1662,93 @@ function drawAncientCore(
   ctx: CanvasRenderingContext2D,
   core: CoreDrillEntity,
   time: number,
-  sprite?: ProcessedSprite | null
+  sprite?: ProcessedSprite | null,
+  endCinematic?: EndCinematicRenderState | null
 ): void {
   const isBlue = core.team === 'blue';
   const teamCol = isBlue ? '#38BDF8' : '#F43F5E';
   const coreH = 228;
   const heartY = core.y - coreH * 0.53;
+  const isShattered = core.hp <= 0;
 
   ctx.save();
+
+  // Shattered Core Breach Sequence when hp <= 0 (Cinematic Collapse!)
+  if (isShattered) {
+    const shatterT = endCinematic ? Math.min(1, endCinematic.elapsed / 1.45) : 1;
+    const collapseDrop = shatterT * 28;
+    const jitterX = shatterT < 0.85 ? Math.sin(time * 62) * (1 - shatterT) * 7 : 0;
+
+    // Blinding Core Breach Light Shafts erupting skyward
+    const rayAlpha = 0.25 + 0.35 * Math.sin(time * 5.2);
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI * 0.88 + (i / 5) * Math.PI * 0.76 + Math.sin(time * 1.4 + i) * 0.05;
+      ctx.save();
+      ctx.translate(core.x, heartY + 12);
+      ctx.rotate(a);
+      const rg = ctx.createLinearGradient(0, 0, 260 + shatterT * 140, 0);
+      rg.addColorStop(0, `rgba(254, 240, 138, ${(rayAlpha * 0.95).toFixed(2)})`);
+      rg.addColorStop(0.45, isBlue ? 'rgba(56, 189, 248, 0.34)' : 'rgba(244, 63, 94, 0.36)');
+      rg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(260 + shatterT * 140, -34);
+      ctx.lineTo(260 + shatterT * 140, 34);
+      ctx.lineTo(0, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Sinking/splitting Core ruin silhouette
+    if (sprite) {
+      const drawW = coreH * sprite.aspect;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.32, 1 - shatterT * 0.55);
+      // Left cracked half tilting outward
+      ctx.save();
+      ctx.translate(core.x - 10 * shatterT + jitterX, core.y + collapseDrop);
+      ctx.rotate(-0.14 * shatterT);
+      ctx.beginPath();
+      ctx.rect(-drawW, -coreH - 20, drawW, coreH + 30);
+      ctx.clip();
+      ctx.drawImage(sprite.canvas, -drawW / 2, -coreH + 5, drawW, coreH);
+      ctx.restore();
+      // Right cracked half tilting outward
+      ctx.save();
+      ctx.translate(core.x + 10 * shatterT - jitterX, core.y + collapseDrop);
+      ctx.rotate(0.14 * shatterT);
+      ctx.beginPath();
+      ctx.rect(0, -coreH - 20, drawW, coreH + 30);
+      ctx.clip();
+      ctx.drawImage(sprite.canvas, -drawW / 2, -coreH + 5, drawW, coreH);
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // Glowing crater fissure & shockwave rings
+    const craterGlow = ctx.createRadialGradient(core.x, core.y - 18, 10, core.x, core.y - 18, 155);
+    craterGlow.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+    craterGlow.addColorStop(0.32, 'rgba(251, 191, 36, 0.55)');
+    craterGlow.addColorStop(0.68, isBlue ? 'rgba(56, 189, 248, 0.25)' : 'rgba(244, 63, 94, 0.28)');
+    craterGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = craterGlow;
+    ctx.beginPath();
+    ctx.arc(core.x, core.y - 18, 155, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Expanding crystal fracture ring
+    const ringPhase = (time * 1.15) % 1;
+    ctx.strokeStyle = `rgba(254, 240, 138, ${(1 - ringPhase).toFixed(2)})`;
+    ctx.lineWidth = 4 * (1 - ringPhase) + 1;
+    ctx.beginPath();
+    ctx.arc(core.x, heartY + 12, 32 + ringPhase * 150, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+    return;
+  }
 
   // Monumental ambient sanctum radiance behind the Core
   const glow = ctx.createRadialGradient(core.x, heartY, 16, core.x, heartY, 130);
@@ -2294,12 +2391,516 @@ const HERO_SPRITE_HEIGHT: Record<HeroEntity['heroId'], number> = {
   vale: 90,
 };
 
+// === AWESOMENAUTS-STYLE HERO ANIMATION STATE MACHINE ===
+type HeroAnimAction =
+  | 'idle'
+  | 'run'
+  | 'jump_rise'
+  | 'jump_fall'
+  | 'land'
+  | 'attack'
+  | 'cast1'
+  | 'cast2'
+  | 'hurt'
+  | 'recall'
+  | 'victory'
+  | 'defeat';
+
+interface HeroAnimState {
+  lastTime: number;
+  prevGrounded: boolean;
+  prevHp: number;
+  prevSkill1Cd: number;
+  prevSkill2Cd: number;
+  prevRecoil: number;
+  landTimer: number;
+  attackTimer: number;
+  attackSwingSign: 1 | -1;
+  castTimer: number;
+  castSlot: 1 | 2;
+  hurtTimer: number;
+  action: HeroAnimAction;
+}
+
+const heroAnimMap = new Map<string, HeroAnimState>();
+
+function updateHeroAnimState(
+  h: HeroEntity,
+  time: number,
+  endCinematic?: EndCinematicRenderState | null
+): HeroAnimState {
+  let st = heroAnimMap.get(h.id);
+  if (!st) {
+    st = {
+      lastTime: time,
+      prevGrounded: h.grounded,
+      prevHp: h.hp,
+      prevSkill1Cd: h.skill1Cd,
+      prevSkill2Cd: h.skill2Cd,
+      prevRecoil: h.recoilTimer,
+      landTimer: 0,
+      attackTimer: 0,
+      attackSwingSign: 1,
+      castTimer: 0,
+      castSlot: 1,
+      hurtTimer: 0,
+      action: 'idle',
+    };
+    heroAnimMap.set(h.id, st);
+  }
+
+  const dt = Math.max(0, Math.min(0.08, time - st.lastTime));
+  st.lastTime = time;
+
+  // Detect landing impact transition (airborne -> grounded)
+  if (!st.prevGrounded && h.grounded) {
+    st.landTimer = 0.2;
+  }
+  st.prevGrounded = h.grounded;
+
+  // Detect Skill 1 / Skill 2 cast spikes
+  if (h.skill1Cd > st.prevSkill1Cd + 0.25) {
+    st.castTimer = 0.34;
+    st.castSlot = 1;
+  } else if (h.skill2Cd > st.prevSkill2Cd + 0.25) {
+    st.castTimer = 0.36;
+    st.castSlot = 2;
+  }
+  st.prevSkill1Cd = h.skill1Cd;
+  st.prevSkill2Cd = h.skill2Cd;
+
+  // Detect primary attack trigger (alternate swing sign for juicy Awesomenauts 1-2 combos!)
+  if (h.recoilTimer > st.prevRecoil + 0.025) {
+    st.attackTimer = 0.26;
+    st.attackSwingSign = st.attackSwingSign === 1 ? -1 : 1;
+  }
+  st.prevRecoil = h.recoilTimer;
+
+  // Detect damage hurt flinch
+  if (h.hp < st.prevHp - 1 || (h.hitFlashTimer > 0.08 && st.hurtTimer <= 0.02)) {
+    st.hurtTimer = 0.2;
+  }
+  st.prevHp = h.hp;
+
+  // Tick down transient animation timers
+  st.landTimer = Math.max(0, st.landTimer - dt);
+  st.attackTimer = Math.max(0, st.attackTimer - dt);
+  st.castTimer = Math.max(0, st.castTimer - dt);
+  st.hurtTimer = Math.max(0, st.hurtTimer - dt);
+
+  // Resolve active animation state by priority
+  if (endCinematic && (endCinematic.active || endCinematic.completed)) {
+    st.action = h.team === endCinematic.winner ? 'victory' : 'defeat';
+  } else if (h.recallTimer > 0) {
+    st.action = 'recall';
+  } else if (st.castTimer > 0 || h.dashTimer > 0 || h.spinTimer > 0) {
+    st.action = st.castSlot === 2 || h.spinTimer > 0 ? 'cast2' : 'cast1';
+  } else if (st.attackTimer > 0) {
+    st.action = 'attack';
+  } else if (st.hurtTimer > 0.08) {
+    st.action = 'hurt';
+  } else if (!h.grounded) {
+    st.action = h.vy < 40 ? 'jump_rise' : 'jump_fall';
+  } else if (st.landTimer > 0.04) {
+    st.action = 'land';
+  } else if (Math.abs(h.vx) > 22) {
+    st.action = 'run';
+  } else {
+    st.action = 'idle';
+  }
+
+  return st;
+}
+
+/**
+ * Draws an animated hero-specific backpiece (flapping hard-light wings, billowing cloaks,
+ * rotating sundial rings, cathedral halos) behind the articulated sprite rig.
+ */
+function drawHeroAnimatedBackpiece(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  anim: HeroAnimState,
+  time: number,
+  phaseSeed: number,
+  spriteH: number,
+  moveRatio: number
+): void {
+  const flapBoost = !h.grounded ? 2.4 : moveRatio > 0.2 ? 1.5 : 1.0;
+
+  if (h.heroId === 'seraph') {
+    // Flapping Radiant Hard-Light Seraph Wings!
+    const wingFlap = Math.sin(time * 7.5 * flapBoost + phaseSeed) * (h.isHovering ? 0.52 : 0.28);
+    ctx.save();
+    ctx.translate(-h.facing * 8, -spriteH * 0.56);
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.scale(h.facing, 1);
+      ctx.rotate(side * (0.28 + wingFlap) - 0.12);
+      ctx.fillStyle = side === 1 ? 'rgba(56, 189, 248, 0.55)' : 'rgba(251, 191, 36, 0.48)';
+      ctx.strokeStyle = '#E0F2FE';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(-24, -18 * side, -38, -6 * side);
+      ctx.quadraticCurveTo(-24, 5 * side, -6, 6 * side);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  } else if (h.heroId === 'vorg' || h.heroId === 'vexia' || h.heroId === 'vespra') {
+    // Billowing Cloth / Plague Cloak reacting dynamically to horizontal speed & fall velocity!
+    const cloakCol =
+      h.heroId === 'vorg'
+        ? 'rgba(126, 34, 206, 0.65)'
+        : h.heroId === 'vexia'
+          ? 'rgba(159, 18, 57, 0.62)'
+          : 'rgba(63, 98, 18, 0.66)';
+    const trimCol =
+      h.heroId === 'vorg' ? '#C084FC' : h.heroId === 'vexia' ? '#FDA4AF' : '#A3E635';
+    const wind = moveRatio * 18 + (!h.grounded ? Math.max(-10, Math.min(18, h.vy * 0.03)) : 0);
+    const wave = Math.sin(time * (6 + moveRatio * 8) + phaseSeed) * (4 + moveRatio * 5);
+
+    ctx.save();
+    ctx.translate(0, -spriteH * 0.62);
+    ctx.scale(h.facing, 1);
+    ctx.fillStyle = cloakCol;
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.quadraticCurveTo(-18 - wind * 0.6, 18 + wave * 0.5, -26 - wind, 40 - wind * 0.35 + wave);
+    ctx.lineTo(-10 - wind * 0.55, 44 - wind * 0.25 - wave * 0.5);
+    ctx.quadraticCurveTo(-4, 22, 4, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = trimCol;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-26 - wind, 40 - wind * 0.35 + wave);
+    ctx.lineTo(-10 - wind * 0.55, 44 - wind * 0.25 - wave * 0.5);
+    ctx.stroke();
+    ctx.restore();
+  } else if (h.heroId === 'vale') {
+    // Rotating Golden-Cyan Sundial Chrono Halo
+    ctx.save();
+    ctx.translate(0, -spriteH * 0.58);
+    ctx.rotate(time * (h.hasteTimer > 0 ? 4.8 : 1.5));
+    ctx.strokeStyle = 'rgba(251, 191, 36, 0.78)';
+    ctx.lineWidth = 2.4;
+    ctx.setLineDash([10, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 31, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      ctx.fillStyle = i % 2 === 0 ? '#FEF08A' : '#38BDF8';
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * 31, Math.sin(a) * 31, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (h.heroId === 'bastion') {
+    // Radiant Cathedral Relic Crown Halo behind Brother Bastion
+    ctx.save();
+    ctx.translate(0, -spriteH * 0.66);
+    ctx.rotate(time * 0.55);
+    ctx.strokeStyle = anim.action === 'victory' ? '#FEF08A' : 'rgba(245, 158, 11, 0.7)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 26, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 24, Math.sin(a) * 24);
+      ctx.lineTo(Math.cos(a) * 32, Math.sin(a) * 32);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else if (h.heroId === 'marrow') {
+    // Twin Blight Furnace Steam Exhaust Plumes
+    const ep = (time * 1.9 + phaseSeed) % 1;
+    ctx.save();
+    ctx.fillStyle = h.rotTimer > 0 ? '#10B981' : '#34D399';
+    ctx.globalAlpha = (1 - ep) * 0.72;
+    ctx.beginPath();
+    ctx.arc(-h.facing * 14 + Math.sin(time * 5) * 5, -spriteH * 0.68 - ep * 34, 4 + ep * 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  } else if (h.heroId === 'korak' || h.heroId === 'caldris') {
+    // Orbiting Spectral Motes / Soul-Lattice Halo
+    ctx.save();
+    const col = h.heroId === 'korak' ? '#34D399' : '#2DD4BF';
+    for (let i = 0; i < 3; i++) {
+      const ka = time * 2.8 + phaseSeed + (i * Math.PI * 2) / 3;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.78;
+      ctx.beginPath();
+      ctx.arc(Math.cos(ka) * 29, -spriteH * 0.52 + Math.sin(ka * 1.3) * 14, 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+/**
+ * Draws a crisp 360°-aimed Awesomenauts foreground weapon & attack animation overlay
+ * (swing arcs, recoil kicks, cast surges, victory raises) tailored to each of the 10 champions.
+ */
+function drawHeroAnimatedWeaponRig(
+  ctx: CanvasRenderingContext2D,
+  h: HeroEntity,
+  anim: HeroAnimState,
+  time: number,
+  accentColor: string,
+  spriteH: number
+): void {
+  const isVictory = anim.action === 'victory';
+  const isDefeat = anim.action === 'defeat';
+  const atkProgress = anim.attackTimer > 0 ? 1 - anim.attackTimer / 0.26 : 0; // 0 -> 1
+  const castProgress = anim.castTimer > 0 ? 1 - anim.castTimer / 0.34 : 0;
+
+  // Compute local aim angle in hero-facing space (clamped cleanly so weapon never bends backward awkwardly)
+  let aim = h.aimAngle;
+  if (isVictory) {
+    aim = h.facing === 1 ? -1.12 + Math.sin(time * 9) * 0.14 : Math.PI + 1.12 - Math.sin(time * 9) * 0.14;
+  } else if (isDefeat) {
+    aim = h.facing === 1 ? 0.65 : Math.PI - 0.65;
+  }
+
+  // Awesomenauts 3-stage attack curve: wind-up (0..0.22) -> snap strike (0.22..0.58) -> follow-through (0.58..1)
+  let swingAngle = 0;
+  let thrustOffset = 0;
+  if (anim.attackTimer > 0) {
+    if (atkProgress < 0.22) {
+      const p = atkProgress / 0.22;
+      swingAngle = -0.68 * anim.attackSwingSign * p;
+      thrustOffset = -5 * p;
+    } else if (atkProgress < 0.58) {
+      const p = (atkProgress - 0.22) / 0.36;
+      const ease = 1 - Math.pow(1 - p, 3);
+      swingAngle = (-0.68 + 1.65 * ease) * anim.attackSwingSign;
+      thrustOffset = -5 + 17 * ease;
+    } else {
+      const p = (atkProgress - 0.58) / 0.42;
+      swingAngle = 0.97 * anim.attackSwingSign * (1 - p);
+      thrustOffset = 12 * (1 - p);
+    }
+  } else if (anim.castTimer > 0) {
+    const pulse = Math.sin(castProgress * Math.PI);
+    swingAngle = -0.35 * pulse * h.facing;
+    thrustOffset = 10 * pulse;
+  } else {
+    // Subtle breathing / running weapon bob
+    const moveFactor = Math.min(1, Math.abs(h.vx) / 220);
+    swingAngle = Math.sin(h.walkCycle * 2.1) * 0.12 * moveFactor + Math.sin(time * 3.1) * 0.03;
+    thrustOffset = Math.cos(h.walkCycle * 2.1) * 2.5 * moveFactor;
+  }
+
+  const shoulderY = -spriteH * 0.48 + (isDefeat ? 10 : 0);
+  const facingLeft = Math.cos(aim) < 0;
+
+  ctx.save();
+  ctx.translate(0, shoulderY);
+  ctx.rotate(aim + swingAngle);
+  if (facingLeft) ctx.scale(1, -1);
+  ctx.translate(10 + thrustOffset, 0);
+
+  // Crisp inked foreground weapon silhouette per champion
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2.2;
+  ctx.lineJoin = 'round';
+
+  switch (h.heroId) {
+    case 'marrow': {
+      // Heavy Butcher Cleaver / Abyssal Hook Blade
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(-4, -3, 18, 6);
+      ctx.strokeRect(-4, -3, 18, 6);
+      ctx.fillStyle = '#94A3B8';
+      ctx.beginPath();
+      ctx.moveTo(10, -10);
+      ctx.lineTo(30, -7);
+      ctx.lineTo(28, 7);
+      ctx.lineTo(10, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#34D399';
+      ctx.fillRect(14, -7, 13, 3);
+      break;
+    }
+    case 'seraph': {
+      // Radiant Hard-Light Seraph Glaive
+      ctx.fillStyle = '#D97706';
+      ctx.fillRect(-8, -2.5, 30, 5);
+      ctx.strokeRect(-8, -2.5, 30, 5);
+      ctx.fillStyle = '#38BDF8';
+      ctx.beginPath();
+      ctx.moveTo(20, -7);
+      ctx.lineTo(38, 0);
+      ctx.lineTo(20, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case 'korak': {
+      // Gnarled Occult Skull Staff
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(-6, -2.5, 28, 5);
+      ctx.strokeRect(-6, -2.5, 28, 5);
+      ctx.fillStyle = '#34D399';
+      ctx.beginPath();
+      ctx.arc(25, 0, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case 'vorg': {
+      // Eldritch Twin Void Claws
+      ctx.fillStyle = '#A855F7';
+      for (const cy of [-6, 0, 6]) {
+        ctx.beginPath();
+        ctx.moveTo(8, cy - 2);
+        ctx.lineTo(28, cy);
+        ctx.lineTo(8, cy + 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'bastion': {
+      // Sanctum Siege Mortar Cannon
+      ctx.fillStyle = '#334155';
+      ctx.fillRect(0, -7, 26, 14);
+      ctx.strokeRect(0, -7, 26, 14);
+      ctx.fillStyle = '#F59E0B';
+      ctx.fillRect(18, -8.5, 9, 17);
+      ctx.strokeRect(18, -8.5, 9, 17);
+      break;
+    }
+    case 'vexia': {
+      // Double-Limbed Crimson Rail-Crossbow
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(0, -3.5, 24, 7);
+      ctx.strokeRect(0, -3.5, 24, 7);
+      ctx.strokeStyle = '#F43F5E';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(16, -13);
+      ctx.quadraticCurveTo(23, 0, 16, 13);
+      ctx.stroke();
+      break;
+    }
+    case 'xylar': {
+      // Razor Plasma Wrist-Blade
+      ctx.fillStyle = h.cloakCritReady ? '#FDE047' : '#38BDF8';
+      ctx.beginPath();
+      ctx.moveTo(4, -4);
+      ctx.lineTo(32, -1);
+      ctx.lineTo(14, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case 'caldris': {
+      // Tethered Soul-Rail Crystal Focus
+      ctx.fillStyle = '#14B8A6';
+      ctx.beginPath();
+      ctx.moveTo(12, -7);
+      ctx.lineTo(29, 0);
+      ctx.lineTo(12, 7);
+      ctx.lineTo(6, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+    case 'vespra': {
+      // Swinging Brass Plague Censer
+      ctx.strokeStyle = '#A16207';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(4, 0);
+      ctx.lineTo(22, 2);
+      ctx.stroke();
+      ctx.fillStyle = '#84CC16';
+      ctx.beginPath();
+      ctx.arc(24, 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      break;
+    }
+    case 'vale': {
+      // Golden Solar Prism Lance
+      ctx.fillStyle = '#F59E0B';
+      ctx.fillRect(-6, -2.5, 26, 5);
+      ctx.strokeRect(-6, -2.5, 26, 5);
+      ctx.fillStyle = '#FEF08A';
+      ctx.beginPath();
+      ctx.moveTo(18, -6);
+      ctx.lineTo(36, 0);
+      ctx.lineTo(18, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      break;
+    }
+  }
+
+  // Sweeping Melee Energy Crescent or Ranged Muzzle Flash synced to strike window!
+  if (anim.attackTimer > 0 && atkProgress > 0.16 && atkProgress < 0.72) {
+    const flare = 1 - Math.abs((atkProgress - 0.38) / 0.34);
+    ctx.globalAlpha = Math.max(0, Math.min(1, flare)) * 0.92;
+    if (h.heroId === 'marrow' || h.heroId === 'vorg' || h.heroId === 'xylar') {
+      const arcCol =
+        h.heroId === 'marrow' ? '#34D399' : h.heroId === 'vorg' ? '#C084FC' : h.cloakCritReady ? '#FDE047' : '#38BDF8';
+      ctx.strokeStyle = arcCol;
+      ctx.lineWidth = h.heroId === 'marrow' ? 8 : 5.5;
+      ctx.beginPath();
+      ctx.arc(8, 0, h.heroId === 'marrow' ? 38 : 31, -1.05, 1.05);
+      ctx.stroke();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(10, 0, h.heroId === 'marrow' ? 35 : 28, -0.75, 0.75);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = accentColor;
+      ctx.beginPath();
+      ctx.moveTo(26, 0);
+      ctx.lineTo(44 + flare * 11, -8);
+      ctx.lineTo(37, 0);
+      ctx.lineTo(44 + flare * 11, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(31, 0, 4 + flare * 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}
+
 function drawHero(
   ctx: CanvasRenderingContext2D,
   h: HeroEntity,
   time: number,
   localTeam: Team,
-  sprite?: ProcessedSprite
+  sprite?: ProcessedSprite,
+  endCinematic?: EndCinematicRenderState | null
 ): void {
   const def = HERO_MAP[h.heroId];
   const isBlue = h.team === 'blue';
@@ -2320,14 +2921,16 @@ function drawHero(
     return;
   }
 
+  const anim = updateHeroAnimState(h, time, endCinematic);
+
   ctx.save();
   ctx.translate(h.x, h.y);
   if (isCloaked) {
     ctx.globalAlpha = 0.45;
   }
 
-  // Team ground contact shadow (responds subtly to grounded vs airborne state)
-  const airScale = h.grounded ? 1 : 0.78;
+  // Team ground contact shadow + landing dust ring
+  const airScale = h.grounded ? 1 : 0.74;
   ctx.save();
   ctx.fillStyle = isBlue ? 'rgba(56, 189, 248, 0.34)' : 'rgba(244, 63, 94, 0.36)';
   ctx.beginPath();
@@ -2342,6 +2945,25 @@ function drawHero(
     ctx.beginPath();
     ctx.ellipse(0, h.h / 2 - 1, h.w * 0.96 * airScale, 9.5 * airScale, 0, 0, Math.PI * 2);
     ctx.stroke();
+  }
+  // Landing impact dust puff ring!
+  if (anim.landTimer > 0) {
+    const lp = 1 - anim.landTimer / 0.2;
+    ctx.strokeStyle = `rgba(226, 232, 240, ${(0.75 * (1 - lp)).toFixed(2)})`;
+    ctx.lineWidth = 3 * (1 - lp) + 1;
+    ctx.beginPath();
+    ctx.ellipse(0, h.h / 2, h.w * (0.7 + lp * 0.95), 7 + lp * 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Rhythmic sprint footstep dust puffs right beneath boots!
+  if (anim.action === 'run' && h.grounded) {
+    const stepWave = Math.abs(Math.sin(h.walkCycle * 2.4));
+    if (stepWave < 0.25) {
+      ctx.fillStyle = 'rgba(203, 213, 225, 0.48)';
+      ctx.beginPath();
+      ctx.arc(-h.facing * 14, h.h / 2 - 2, 4.5 * (1 - stepWave * 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // Slow debuff ground frost ring
   if (h.slowTimer > 0) {
@@ -2446,98 +3068,208 @@ function drawHero(
     ctx.restore();
   }
 
-  // Hand-Inked Full-Body Champion Sprite (matching Champion Select art style!)
+  // Skill Cast Surge Halo Ring
+  if (anim.castTimer > 0) {
+    const cp = 1 - anim.castTimer / 0.35;
+    ctx.save();
+    ctx.strokeStyle = def.accentColor;
+    ctx.globalAlpha = (1 - cp) * 0.85;
+    ctx.lineWidth = 3.2 * (1 - cp) + 1;
+    ctx.beginPath();
+    ctx.arc(0, -10, 22 + cp * 36, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Victory Celebration Golden Sparkles during end cinematic!
+  if (anim.action === 'victory') {
+    ctx.save();
+    for (let i = 0; i < 4; i++) {
+      const sp = (time * 1.8 + i * 0.25) % 1;
+      const sx = Math.cos(time * 3 + i * 1.6) * 28;
+      const sy = h.h / 2 - sp * 95;
+      ctx.fillStyle = i % 2 === 0 ? '#FEF08A' : '#38BDF8';
+      ctx.globalAlpha = 1 - sp;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Hand-Inked Multi-Part Articulated Awesomenauts Champion Rig
   const spriteH = HERO_SPRITE_HEIGHT[h.heroId] ?? 86;
-  // Stable per-hero phase seed (never derived from h.x, which would jitter every pixel!)
   const phaseSeed = (h.id.charCodeAt(h.id.length - 1) || 0) * 1.37;
   if (sprite) {
     const drawW = spriteH * sprite.aspect;
-    const moveRatio = Math.min(1, Math.abs(h.vx) / 240);
-    const isFloatingHero = h.heroId === 'korak' || h.heroId === 'caldris';
-    // Natural rhythmic footstep cadence (~2.8 steps/sec at full sprint, zero jackhammer jitter)
-    const stride = h.walkCycle * 1.9;
-    const strideArc = Math.abs(Math.sin(stride));
-    const breathe = h.grounded ? (1 - moveRatio) * Math.sin(time * 2.8 + phaseSeed) * 0.018 : 0;
-    const runBob = h.grounded && !isFloatingHero ? strideArc * 4.6 * moveRatio : 0;
-    const strideRock = h.grounded && !isFloatingHero ? Math.sin(stride) * 0.048 * moveRatio : 0;
-    const strideStretch = h.grounded && !isFloatingHero ? (strideArc - 0.5) * 0.036 * moveRatio : 0;
-    const floatBob = isFloatingHero
-      ? Math.sin(time * 3.2 + phaseSeed) * 4.5 + 4
-      : h.isHovering
-        ? Math.sin(time * 7.5 + phaseSeed) * 3 + 3
-        : 0;
-    const airPitch = !h.grounded ? Math.max(-0.14, Math.min(0.14, (h.vy / 2600) * h.facing)) : 0;
-    const airStretch = !h.grounded ? Math.min(0.07, Math.abs(h.vy) / 5500) : 0;
-    const moveTilt = Math.max(-0.1, Math.min(0.1, (h.vx / 3000) * h.facing));
-    const attackKick = h.recoilTimer > 0 ? 0.08 : 0;
-    const attackLunge = h.recoilTimer > 0 ? 4.2 : 0;
+    const moveRatio = Math.min(1, Math.abs(h.vx) / 230);
+    const isFloatingHero = sprite.rig?.isFloating ?? (h.heroId === 'korak' || h.heroId === 'caldris');
 
-    // Hero-specific subtle ambient flourishes behind sprite
+    // Compute Awesomenauts Multi-Joint Keyframe Pose
+    const stridePhase = h.walkCycle * 2.4;
+    const strideSin = Math.sin(stridePhase);
+    const strideCos = Math.cos(stridePhase);
+    const strideBounce = Math.abs(strideSin);
+
+    let rootLift = 0;
+    let rootScaleX = h.squashX;
+    let rootScaleY = h.squashY;
+    let backLegRot = 0;
+    let frontLegRot = 0;
+    let backLegLift = 0;
+    let frontLegLift = 0;
+    let torsoRot = 0;
+    let torsoShiftX = 0;
+    let torsoShiftY = 0;
+    let headRot = 0;
+    let headShiftY = 0;
+
+    // 1. Base locomotion pose (Idle / Run / Jump / Fall / Land / Recall / Victory / Defeat)
+    if (anim.action === 'victory') {
+      const hop = Math.abs(Math.sin(time * 6.4 + phaseSeed));
+      rootLift = hop * 14;
+      rootScaleX *= 1 - hop * 0.06;
+      rootScaleY *= 1 + hop * 0.08;
+      frontLegRot = -0.32 * hop;
+      backLegRot = 0.28 * hop;
+      torsoRot = -0.09 - hop * 0.06;
+      headRot = -0.14 + Math.sin(time * 9) * 0.06;
+    } else if (anim.action === 'defeat') {
+      // Slumped defeated kneel/collapse
+      rootLift = -6;
+      rootScaleX *= 1.07;
+      rootScaleY *= 0.88;
+      frontLegRot = 0.34;
+      backLegRot = -0.22;
+      torsoRot = 0.24;
+      torsoShiftY = 5;
+      headRot = 0.32;
+      headShiftY = 3;
+    } else if (anim.action === 'recall') {
+      // Levitating arcane channel
+      rootLift = 11 + Math.sin(time * 5.2 + phaseSeed) * 4;
+      frontLegRot = 0.18;
+      backLegRot = -0.18;
+      torsoRot = -0.06;
+      headRot = -0.16;
+    } else if (!h.grounded) {
+      if (h.vy < 40) {
+        // Jump Ascent: knees tucked, stretched upward silhouette
+        rootScaleX *= 0.92;
+        rootScaleY *= 1.1;
+        frontLegRot = -0.46;
+        frontLegLift = 5;
+        backLegRot = 0.34;
+        torsoRot = 0.08 * moveRatio;
+        headRot = -0.1;
+      } else {
+        // Jump Fall: splayed legs bracing for landing
+        rootScaleX *= 0.96;
+        rootScaleY *= 1.05;
+        frontLegRot = 0.26;
+        backLegRot = -0.34;
+        torsoRot = -0.06;
+        headRot = 0.1;
+      }
+    } else if (anim.action === 'land') {
+      // Snappy Landing Squash Crouch
+      const lp = anim.landTimer / 0.2;
+      rootScaleX *= 1 + lp * 0.16;
+      rootScaleY *= 1 - lp * 0.16;
+      frontLegRot = 0.24 * lp;
+      backLegRot = -0.24 * lp;
+      torsoRot = 0.12 * lp;
+      torsoShiftY = 3 * lp;
+    } else if (anim.action === 'run') {
+      if (isFloatingHero) {
+        // Gliding forward rush with flowing trailing robe hems
+        rootLift = 6 + Math.sin(time * 4.5 + phaseSeed) * 4;
+        torsoRot = 0.16 * moveRatio;
+        backLegRot = 0.32 * moveRatio + Math.sin(time * 8) * 0.08;
+        frontLegRot = 0.2 * moveRatio + Math.cos(time * 8) * 0.07;
+        headRot = -0.08 * moveRatio;
+      } else {
+        // Full Awesomenauts Bipedal Sprint Cycle!
+        rootLift = strideBounce * 6.5 * moveRatio;
+        frontLegRot = strideSin * 0.56 * moveRatio;
+        backLegRot = -strideSin * 0.56 * moveRatio;
+        frontLegLift = Math.max(0, strideCos) * 5.5 * moveRatio;
+        backLegLift = Math.max(0, -strideCos) * 5.5 * moveRatio;
+        torsoRot = 0.14 * moveRatio + strideSin * 0.055 * moveRatio;
+        torsoShiftY = (1 - strideBounce) * 2.2 * moveRatio;
+        headRot = -0.09 * moveRatio - strideSin * 0.04 * moveRatio;
+      }
+    } else {
+      // Layered Idle Breathing (chest expands, head lags smoothly behind)
+      const breath = Math.sin(time * 2.9 + phaseSeed);
+      const breathLag = Math.sin(time * 2.9 + phaseSeed - 0.55);
+      rootLift = isFloatingHero ? 6 + breath * 4.5 : 0;
+      rootScaleX *= 1 - breath * 0.022;
+      rootScaleY *= 1 + breath * 0.026;
+      torsoShiftY = -breath * 1.4;
+      headShiftY = -breathLag * 1.6;
+      headRot = breathLag * 0.035;
+      if (isFloatingHero) {
+        backLegRot = Math.sin(time * 3.4 + phaseSeed) * 0.1;
+        frontLegRot = Math.cos(time * 3.1 + phaseSeed) * 0.08;
+      }
+    }
+
+    // 2. Additive Combat Overlays (Attack Windup-Snap, Skill Cast Lunge, Hurt Flinch)
+    if (anim.attackTimer > 0) {
+      const ap = 1 - anim.attackTimer / 0.26;
+      if (ap < 0.24) {
+        // Anticipation pull-back
+        const w = ap / 0.24;
+        torsoRot -= 0.18 * w;
+        torsoShiftX -= 4 * w;
+      } else {
+        // Explosive strike lunge & follow-through
+        const s = 1 - (ap - 0.24) / 0.76;
+        torsoRot += 0.22 * s;
+        torsoShiftX += 6.5 * s;
+        headRot -= 0.06 * s;
+        if (h.grounded && !isFloatingHero) {
+          frontLegRot -= 0.22 * s;
+          backLegRot += 0.2 * s;
+        }
+      }
+    }
+
+    if (anim.castTimer > 0) {
+      const cp = Math.sin((1 - anim.castTimer / 0.35) * Math.PI);
+      torsoRot += (anim.castSlot === 2 ? -0.16 : 0.18) * cp;
+      torsoShiftX += (anim.castSlot === 1 ? 7 : 2) * cp;
+      rootLift += (anim.castSlot === 2 ? 6 : 2) * cp;
+      headRot -= 0.12 * cp;
+    }
+
+    if (anim.hurtTimer > 0) {
+      const hpct = anim.hurtTimer / 0.2;
+      torsoRot -= 0.22 * hpct;
+      torsoShiftX -= 5.5 * hpct;
+      headRot -= 0.2 * hpct;
+    }
+
+    // Subtle vertical aim tracking on head so champion looks toward their reticle!
+    if (anim.action !== 'victory' && anim.action !== 'defeat') {
+      const aimVertical = Math.sin(h.aimAngle);
+      headRot += Math.max(-0.22, Math.min(0.22, aimVertical * 0.24));
+    }
+
+    // Hover jet aura
     if (h.isHovering || h.heroId === 'caldris') {
       ctx.save();
-      ctx.fillStyle = h.heroId === 'caldris' ? 'rgba(45, 212, 191, 0.34)' : 'rgba(56, 189, 248, 0.34)';
+      ctx.fillStyle = h.heroId === 'caldris' ? 'rgba(45, 212, 191, 0.36)' : 'rgba(56, 189, 248, 0.36)';
       ctx.beginPath();
-      ctx.ellipse(0, h.h / 2 - 2, 22, 6, 0, 0, Math.PI * 2);
-      ctx.fill();
-      if (h.heroId === 'caldris') {
-        ctx.strokeStyle = '#2DD4BF';
-        ctx.lineWidth = 1.6;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.ellipse(0, h.h / 2 - 2, 26, 7.5, 0, time * 2.5, time * 2.5 + Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    if (h.heroId === 'vale') {
-      // Orbiting golden-cyan sundial halo ring behind Vale
-      ctx.save();
-      ctx.translate(0, -spriteH * 0.45);
-      ctx.rotate(time * 1.4);
-      ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([9, 6]);
-      ctx.beginPath();
-      ctx.arc(0, 0, 30, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    } else if (h.heroId === 'vespra') {
-      // Drifting emerald censer vapor wisps trailing behind Vespra
-      ctx.save();
-      for (let i = 0; i < 2; i++) {
-        const vp = (time * 1.2 + i * 0.5 + phaseSeed) % 1;
-        ctx.fillStyle = 'rgba(132, 204, 22, 0.42)';
-        ctx.globalAlpha = 1 - vp;
-        ctx.beginPath();
-        ctx.arc(-h.facing * (12 + vp * 20), 2 - vp * 34, 4 + vp * 4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    } else if (h.heroId === 'korak') {
-      ctx.save();
-      for (let i = 0; i < 2; i++) {
-        const ka = time * 2.6 + phaseSeed + i * Math.PI;
-        ctx.fillStyle = '#34D399';
-        ctx.globalAlpha = 0.72;
-        ctx.beginPath();
-        ctx.arc(Math.cos(ka) * 28, -22 + Math.sin(ka * 1.3) * 14, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    } else if (h.heroId === 'marrow' || h.heroId === 'bastion') {
-      const ep = (time * 1.5 + phaseSeed) % 1;
-      ctx.save();
-      ctx.fillStyle = h.heroId === 'marrow' ? '#34D399' : '#FDE047';
-      ctx.globalAlpha = (1 - ep) * 0.75;
-      ctx.beginPath();
-      ctx.arc(-h.facing * 12 + Math.sin(time * 4) * 5, -18 - ep * 32, 2.5, 0, Math.PI * 2);
+      ctx.ellipse(0, h.h / 2 - 2, 24, 6.5, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
 
     if (h.cloakCritReady) {
       ctx.save();
-      ctx.strokeStyle = 'rgba(253, 224, 71, 0.8)';
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.82)';
       ctx.lineWidth = 2.4;
       ctx.beginPath();
       ctx.arc(0, -6, 36 + Math.sin(time * 10) * 2.5, 0, Math.PI * 2);
@@ -2570,79 +3302,101 @@ function drawHero(
       for (let g = 2; g >= 1; g--) {
         ctx.save();
         ctx.globalAlpha = (isCloaked ? 0.14 : 0.24) / g;
-        ctx.translate(-h.vx * 0.022 * g, h.h / 2 + 2 - runBob - floatBob - h.vy * 0.018 * g);
+        ctx.translate(-h.vx * 0.022 * g, h.h / 2 + 2 - rootLift - h.vy * 0.018 * g);
         ctx.scale(h.facing, 1);
         ctx.drawImage(sprite.canvas, -drawW / 2, -spriteH, drawW, spriteH);
         ctx.restore();
       }
     }
 
+    // Layer 1: Animated Hero Backpiece (wings, billowing cloaks, halos)
     ctx.save();
-    // Anchor at boots on ground line so squash, stretch & lean pivot naturally from feet
-    ctx.translate(0, h.h / 2 + 2 - runBob - floatBob);
-    ctx.scale(
-      (h.squashX - breathe - strideStretch * 0.5 - airStretch * 0.4) * h.facing,
-      h.squashY + breathe + strideStretch + airStretch
-    );
-    ctx.rotate(moveTilt + strideRock + airPitch + attackKick);
-
-    // Subtle colored drop-shadow rim so enemy vs ally silhouettes pop cleanly against cathedral stonework
-    ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
-    ctx.shadowBlur = h.isPlayer ? 12 : 9;
-    ctx.drawImage(sprite.canvas, -drawW / 2 + attackLunge, -spriteH, drawW, spriteH);
-    ctx.shadowBlur = 0;
-
-    // Crisp white hit-flash or Bastion meltdown pulse
-    const meltdownFlash = h.meltdownTimer > 0 && Math.floor(time * 16) % 2 === 0;
-    if (h.hitFlashTimer > 0 || meltdownFlash) {
-      ctx.globalAlpha = h.hitFlashTimer > 0 ? 0.72 : 0.42;
-      ctx.drawImage(sprite.flashCanvas, -drawW / 2 + attackLunge, -spriteH, drawW, spriteH);
-      ctx.globalAlpha = 1;
-    }
+    ctx.translate(0, h.h / 2 + 2 - rootLift);
+    drawHeroAnimatedBackpiece(ctx, h, anim, time, phaseSeed, spriteH, moveRatio);
     ctx.restore();
 
-    // Signature Directional Attack Slash Arc / Muzzle Flare when attacking!
-    if (h.recoilTimer > 0) {
+    // Layer 2: Multi-Part Articulated Inked Puppet (Back Leg -> Front Leg -> Torso -> Head)
+    const meltdownFlash = h.meltdownTimer > 0 && Math.floor(time * 16) % 2 === 0;
+    const flashAlpha = h.hitFlashTimer > 0 ? 0.72 : meltdownFlash ? 0.42 : 0;
+
+    ctx.save();
+    ctx.translate(0, h.h / 2 + 2 - rootLift);
+    ctx.scale(rootScaleX * h.facing, rootScaleY);
+    ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
+    ctx.shadowBlur = h.isPlayer ? 12 : 9;
+
+    const rig = sprite.rig;
+    if (rig) {
+      const waistPivotY = -spriteH * (1 - rig.waistRatio);
+      const neckPivotY = -spriteH * (1 - rig.headRatio);
+
+      // 2a. Rear Leg / Back Robe Hem pivoting around hip joint
       ctx.save();
-      ctx.translate(0, -10);
-      ctx.rotate(h.aimAngle);
-      const tNorm = Math.min(1, h.recoilTimer / 0.14);
-      ctx.globalAlpha = tNorm * 0.9;
-      if (h.heroId === 'marrow' || h.heroId === 'vorg' || h.heroId === 'xylar') {
-        const arcCol =
-          h.heroId === 'marrow' ? '#34D399' : h.heroId === 'vorg' ? '#C084FC' : h.cloakCritReady ? '#FDE047' : '#38BDF8';
-        ctx.strokeStyle = arcCol;
-        ctx.lineWidth = h.heroId === 'marrow' ? 7 : 5;
-        ctx.beginPath();
-        ctx.arc(10, 0, h.heroId === 'marrow' ? 46 : 38, -0.95, 0.95);
-        ctx.stroke();
-        ctx.strokeStyle = '#FFFFFF';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(12, 0, h.heroId === 'marrow' ? 43 : 35, -0.7, 0.7);
-        ctx.stroke();
-      } else {
-        // Ranged muzzle / spell burst cone
-        const mCol =
-          h.heroId === 'vespra'
-            ? '#84CC16'
-            : h.heroId === 'vale'
-              ? '#FDE047'
-              : def.accentColor;
-        ctx.fillStyle = mCol;
-        ctx.beginPath();
-        ctx.moveTo(26, 0);
-        ctx.lineTo(44 + tNorm * 10, -7);
-        ctx.lineTo(39, 0);
-        ctx.lineTo(44 + tNorm * 10, 7);
-        ctx.closePath();
-        ctx.fill();
+      ctx.translate(-drawW * 0.04, waistPivotY - backLegLift);
+      ctx.rotate(backLegRot);
+      ctx.drawImage(rig.backLegCanvas, -drawW / 2 + drawW * 0.04, -spriteH - waistPivotY, drawW, spriteH);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.drawImage(rig.backLegFlash, -drawW / 2 + drawW * 0.04, -spriteH - waistPivotY, drawW, spriteH);
+        ctx.globalAlpha = 1;
       }
       ctx.restore();
-    }
 
-    // Precision 360-degree Aim Direction Pip for the local player
-    if (h.isPlayer) {
+      // 2b. Front Leg / Front Robe Hem pivoting around hip joint
+      ctx.save();
+      ctx.translate(drawW * 0.04, waistPivotY - frontLegLift);
+      ctx.rotate(frontLegRot);
+      ctx.drawImage(rig.frontLegCanvas, -drawW / 2 - drawW * 0.04, -spriteH - waistPivotY, drawW, spriteH);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.drawImage(rig.frontLegFlash, -drawW / 2 - drawW * 0.04, -spriteH - waistPivotY, drawW, spriteH);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+
+      // 2c. Upper Torso & Shoulders pivoting around waist joint
+      ctx.save();
+      ctx.translate(torsoShiftX, waistPivotY + torsoShiftY);
+      ctx.rotate(torsoRot);
+      ctx.drawImage(rig.torsoCanvas, -drawW / 2, -spriteH - waistPivotY, drawW, spriteH);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.drawImage(rig.torsoFlash, -drawW / 2, -spriteH - waistPivotY, drawW, spriteH);
+        ctx.globalAlpha = 1;
+      }
+
+      // 2d. Head / Helmet nested cleanly on top of Torso (follows torso lean + tracks aim!)
+      ctx.save();
+      ctx.translate(0, neckPivotY - waistPivotY + headShiftY);
+      ctx.rotate(headRot);
+      ctx.drawImage(rig.headCanvas, -drawW / 2, -spriteH - neckPivotY, drawW, spriteH);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.drawImage(rig.headFlash, -drawW / 2, -spriteH - neckPivotY, drawW, spriteH);
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+      ctx.restore();
+    } else {
+      ctx.rotate(torsoRot);
+      ctx.drawImage(sprite.canvas, -drawW / 2 + torsoShiftX, -spriteH, drawW, spriteH);
+      if (flashAlpha > 0) {
+        ctx.globalAlpha = flashAlpha;
+        ctx.drawImage(sprite.flashCanvas, -drawW / 2 + torsoShiftX, -spriteH, drawW, spriteH);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // Layer 3: Dedicated 360°-Aimed Animated Foreground Weapon Rig + Slash/Muzzle VFX
+    ctx.save();
+    ctx.translate(0, h.h / 2 + 2 - rootLift);
+    drawHeroAnimatedWeaponRig(ctx, h, anim, time, def.accentColor, spriteH);
+    ctx.restore();
+
+    // Precision 360-degree Aim Direction Pip for the local player (hidden during end cinematic)
+    if (h.isPlayer && !endCinematic?.active) {
       ctx.save();
       ctx.translate(0, -8);
       ctx.rotate(h.aimAngle);
@@ -4342,5 +5096,223 @@ function drawCrosshair(ctx: CanvasRenderingContext2D, x: number, y: number, colo
   ctx.beginPath();
   ctx.arc(0, 0, 2, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawEndCinematicOverlay(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  cin: EndCinematicRenderState,
+  time: number
+): void {
+  const t = cin.elapsed;
+  const isWin = cin.localWon;
+
+  ctx.save();
+
+  // 1. Initial Core Shatter Impact Flash (0.0s -> 0.48s)
+  if (t < 0.5) {
+    const flash = Math.pow(1 - t / 0.5, 2.2);
+    ctx.fillStyle = isWin
+      ? `rgba(254, 249, 195, ${(flash * 0.62).toFixed(2)})`
+      : `rgba(244, 63, 94, ${(flash * 0.48).toFixed(2)})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  // 2. Atmospheric Cathedral Mood Wash (Golden Sanctum Glow vs Crimson Ash Desaturation)
+  const moodAlpha = Math.min(1, t / 0.9);
+  const wash = ctx.createRadialGradient(
+    width * 0.5,
+    height * 0.46,
+    Math.min(width, height) * 0.14,
+    width * 0.5,
+    height * 0.5,
+    Math.max(width, height) * 0.72
+  );
+  if (isWin) {
+    wash.addColorStop(0, `rgba(251, 191, 36, ${(0.1 * moodAlpha).toFixed(2)})`);
+    wash.addColorStop(0.55, `rgba(14, 116, 144, ${(0.12 * moodAlpha).toFixed(2)})`);
+    wash.addColorStop(1, `rgba(5, 8, 18, ${(0.62 * moodAlpha).toFixed(2)})`);
+  } else {
+    wash.addColorStop(0, `rgba(136, 19, 55, ${(0.14 * moodAlpha).toFixed(2)})`);
+    wash.addColorStop(0.55, `rgba(30, 12, 22, ${(0.34 * moodAlpha).toFixed(2)})`);
+    wash.addColorStop(1, `rgba(4, 5, 11, ${(0.76 * moodAlpha).toFixed(2)})`);
+  }
+  ctx.fillStyle = wash;
+  ctx.fillRect(0, 0, width, height);
+
+  // 3. Rising Golden Embers (Victory) or Drifting Crimson Ash (Defeat)
+  const emberCount = 26;
+  for (let i = 0; i < emberCount; i++) {
+    const seed = (i * 2654435761) % 1000;
+    const xBase = ((seed / 1000) * width + Math.sin(time * 0.9 + i) * 32 + width) % width;
+    const speed = 38 + (i % 5) * 18;
+    const yPos = isWin
+      ? height - (((time * speed + seed) % (height + 80)) - 40)
+      : ((time * speed * 0.65 + seed) % (height + 80)) - 40;
+    const sz = 2 + (i % 3) * 1.4;
+    ctx.fillStyle = isWin
+      ? i % 3 === 0
+        ? '#FEF08A'
+        : '#F59E0B'
+      : i % 3 === 0
+        ? '#FB7185'
+        : '#64748B';
+    ctx.globalAlpha = (0.35 + 0.45 * Math.sin(time * 3 + i)) * moodAlpha;
+    ctx.beginPath();
+    ctx.arc(xBase, yPos, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // 4. Sliding Widescreen Gothic Cinema Letterbox Bars (0.0s -> 0.55s)
+  const barEase = 1 - Math.pow(1 - Math.min(1, t / 0.55), 3);
+  const barH = Math.round(Math.max(52, height * 0.11) * barEase);
+  ctx.fillStyle = '#05070E';
+  ctx.fillRect(0, 0, width, barH);
+  ctx.fillRect(0, height - barH, width, barH);
+
+  // Gilded / Crimson trim lines along letterbox borders
+  const trimGrad = ctx.createLinearGradient(0, 0, width, 0);
+  trimGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  trimGrad.addColorStop(0.2, isWin ? '#F59E0B' : '#E11D48');
+  trimGrad.addColorStop(0.5, isWin ? '#FEF08A' : '#FDA4AF');
+  trimGrad.addColorStop(0.8, isWin ? '#F59E0B' : '#E11D48');
+  trimGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = trimGrad;
+  ctx.fillRect(0, barH - 2, width, 2);
+  ctx.fillRect(0, height - barH, width, 2);
+
+  // 5. Dramatic Center Gothic Crest + Proclamation Banner Reveal (active during 0.85s -> end; dimmed once modal opens)
+  if (t > 0.72 && !cin.completed) {
+    const rev = Math.min(1, (t - 0.72) / 0.55);
+    const spring = 1 + Math.sin(rev * Math.PI) * 0.08 * (1 - rev);
+    const bannerAlpha = Math.min(1, rev * 1.4);
+    const cx = width * 0.5;
+    const cy = height * 0.44;
+
+    ctx.save();
+    ctx.globalAlpha = bannerAlpha;
+    ctx.translate(cx, cy);
+    ctx.scale(0.84 + 0.16 * rev * spring, 0.84 + 0.16 * rev * spring);
+
+    // Radiant sunburst / fractured halo behind crest
+    ctx.save();
+    ctx.rotate(time * (isWin ? 0.22 : -0.08));
+    for (let i = 0; i < 12; i++) {
+      ctx.rotate((Math.PI * 2) / 12);
+      const rg = ctx.createLinearGradient(0, 0, 210, 0);
+      rg.addColorStop(0, isWin ? 'rgba(251, 191, 36, 0.32)' : 'rgba(225, 29, 72, 0.24)');
+      rg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(210, -24);
+      ctx.lineTo(210, 24);
+      ctx.lineTo(0, 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Ornate Gothic Diamond Crest
+    ctx.save();
+    ctx.translate(0, -76);
+    ctx.fillStyle = isWin ? '#0F172A' : '#180A12';
+    ctx.strokeStyle = isWin ? '#F59E0B' : '#F43F5E';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, -34);
+    ctx.lineTo(30, 0);
+    ctx.lineTo(0, 34);
+    ctx.lineTo(-30, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Inner emblem rune (Golden Sunburst Star for Victory, Fractured Core Shard for Defeat)
+    ctx.fillStyle = isWin ? '#FEF08A' : '#FB7185';
+    ctx.beginPath();
+    if (isWin) {
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const r = i % 2 === 0 ? 18 : 7;
+        if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.moveTo(-4, -18);
+      ctx.lineTo(10, -4);
+      ctx.lineTo(2, 2);
+      ctx.lineTo(9, 16);
+      ctx.lineTo(-10, 4);
+      ctx.lineTo(-2, -3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Sweeping dark-velvet ribbon plate behind title
+    const ribbonW = Math.min(width * 0.72, 620) * Math.min(1, (t - 0.72) / 0.42);
+    const ribGrad = ctx.createLinearGradient(-ribbonW / 2, 0, ribbonW / 2, 0);
+    ribGrad.addColorStop(0, 'rgba(6, 9, 18, 0)');
+    ribGrad.addColorStop(0.18, 'rgba(6, 9, 18, 0.88)');
+    ribGrad.addColorStop(0.82, 'rgba(6, 9, 18, 0.88)');
+    ribGrad.addColorStop(1, 'rgba(6, 9, 18, 0)');
+    ctx.fillStyle = ribGrad;
+    ctx.fillRect(-ribbonW / 2, -46, ribbonW, 96);
+
+    // Metallic Proclamation Typography
+    const title = isWin ? 'VICTORY' : 'DEFEAT';
+    const fontSize = Math.round(Math.min(76, Math.max(46, width * 0.062)));
+    ctx.font = `900 ${fontSize}px "Cinzel", "Bricolage Grotesque", serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = '#05070F';
+    ctx.strokeText(title, 0, -4);
+
+    const textGrad = ctx.createLinearGradient(0, -fontSize * 0.5, 0, fontSize * 0.45);
+    if (isWin) {
+      textGrad.addColorStop(0, '#FEF9C3');
+      textGrad.addColorStop(0.48, '#FBBF24');
+      textGrad.addColorStop(1, '#B45309');
+    } else {
+      textGrad.addColorStop(0, '#FFE4E6');
+      textGrad.addColorStop(0.5, '#F43F5E');
+      textGrad.addColorStop(1, '#881337');
+    }
+    ctx.fillStyle = textGrad;
+    ctx.fillText(title, 0, -4);
+
+    // Subtitle line
+    const subtitle = isWin
+      ? cin.winner === 'blue'
+        ? 'THE INVASION CORE HAS BEEN SHATTERED'
+        : 'THE SANCTUM CORE HAS BEEN SHATTERED'
+      : 'YOUR ANCIENT CORE HAS COLLAPSED';
+    ctx.font = `700 13px "Space Grotesk", sans-serif`;
+    ctx.fillStyle = isWin ? '#FDE68A' : '#FDA4AF';
+    ctx.fillText(subtitle, 0, 34);
+
+    ctx.restore();
+  }
+
+  // 6. Clean Skip Prompt inside bottom letterbox bar once canSkip is active
+  if (cin.active && cin.canSkip && !cin.completed) {
+    const promptAlpha = Math.min(1, (t - 1.1) / 0.4) * (0.65 + 0.25 * Math.sin(time * 4));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, promptAlpha);
+    ctx.font = `600 11px "Space Grotesk", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#CBD5E1';
+    ctx.fillText('CLICK OR PRESS SPACE FOR MATCH STANDINGS', width * 0.5, height - barH * 0.5);
+    ctx.restore();
+  }
+
   ctx.restore();
 }

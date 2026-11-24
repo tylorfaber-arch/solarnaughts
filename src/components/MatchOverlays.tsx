@@ -133,18 +133,22 @@ export function ScoreboardOverlay({ hud }: { hud: HudSnapshot }) {
 interface PauseModalProps {
   hud: HudSnapshot;
   muted: boolean;
+  musicMuted: boolean;
   onResume: () => void;
   onSwitchHero: (heroId: HeroId) => void;
   onToggleMute: () => void;
+  onToggleMusic: () => void;
   onExitToTitle: () => void;
 }
 
 export function PauseModal({
   hud,
   muted,
+  musicMuted,
   onResume,
   onSwitchHero,
   onToggleMute,
+  onToggleMusic,
   onExitToTitle,
 }: PauseModalProps) {
   const [copiedInvite, setCopiedInvite] = useState(false);
@@ -308,13 +312,22 @@ export function PauseModal({
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={onToggleMute}
-                className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer"
-              >
-                {muted ? 'Unmute Sound Effects' : 'Mute Sound Effects'}
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={onToggleMute}
+                  className="py-2.5 px-3 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
+                >
+                  {muted ? 'Unmute Audio' : 'Mute Audio'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onToggleMusic}
+                  className="py-2.5 px-3 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
+                >
+                  {musicMuted ? 'Music: Off' : 'Music: On'}
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -361,9 +374,9 @@ export function EndMatchModal({
   });
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#04060D]/88 p-4">
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#04060D]/82 backdrop-blur-[2px] p-4 transition-opacity duration-300">
       <div
-        className={`relative relic-panel w-full max-w-[720px] max-h-[92vh] overflow-y-auto rounded-2xl border p-6 flex flex-col gap-5 ${
+        className={`relative relic-panel w-full max-w-[720px] max-h-[92vh] overflow-y-auto rounded-2xl border p-6 flex flex-col gap-5 shadow-2xl ${
           victory ? 'border-amber-400/60' : 'border-rose-500/50'
         }`}
       >

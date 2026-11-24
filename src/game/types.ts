@@ -541,6 +541,15 @@ export interface ScoreboardRow {
   respawnTimer: number;
 }
 
+export interface EndCinematicHudState {
+  active: boolean;
+  completed: boolean;
+  winner: Team;
+  elapsed: number;
+  duration: number;
+  canSkip: boolean;
+}
+
 export interface HudSnapshot {
   phase: GamePhase;
   matchTime: number;
@@ -599,4 +608,5 @@ export interface HudSnapshot {
   turretStatus?: Array<{ team: Team; lane: 'top' | 'bot'; tier: 'outer' | 'inner'; alive: boolean }>;
   takenHumanHeroes?: HeroId[];
   scoreboard: ScoreboardRow[];
+  endCinematic?: EndCinematicHudState | null;
 }

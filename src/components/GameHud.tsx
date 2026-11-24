@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Volume2, VolumeX, Pause, Copy, Check, Swords, Shield, Flame } from 'lucide-react';
+import { Volume2, VolumeX, Music, Pause, Copy, Check, Swords, Shield, Flame } from 'lucide-react';
 import { ASCENSION_INFUSIONS, HERO_MAP } from '../game/heroes';
 import { JUMP_PADS, WORLD_H, WORLD_W } from '../game/map';
 import {
@@ -14,9 +14,11 @@ import { AbilityTooltipCard, SimpleTooltipCard, UpgradeTooltipCard } from './Too
 interface GameHudProps {
   hud: HudSnapshot;
   muted: boolean;
+  musicMuted: boolean;
   shopOpen: boolean;
   onToggleShop: () => void;
   onToggleMute: () => void;
+  onToggleMusic: () => void;
   onTogglePause: () => void;
   onRecall: () => void;
 }
@@ -30,9 +32,11 @@ function formatClock(sec: number): string {
 export function GameHud({
   hud,
   muted,
+  musicMuted,
   shopOpen,
   onToggleShop,
   onToggleMute,
+  onToggleMusic,
   onTogglePause,
   onRecall,
 }: GameHudProps) {
@@ -272,8 +276,21 @@ export function GameHud({
           <div className="pointer-events-auto flex items-center gap-1.5">
             <button
               type="button"
+              onClick={onToggleMusic}
+              aria-label={musicMuted ? 'Unmute music' : 'Mute music'}
+              title={musicMuted ? 'Music Off' : 'Music On'}
+              className="relative w-9 h-9 rounded-lg bg-[#080B14]/94 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+            >
+              <Music className={`w-4 h-4 ${musicMuted || muted ? 'text-slate-500' : 'text-amber-300'}`} />
+              {(musicMuted || muted) && (
+                <span className="pointer-events-none absolute w-5 h-0.5 bg-rose-400 rotate-45 rounded" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={onToggleMute}
               aria-label={muted ? 'Unmute audio' : 'Mute audio'}
+              title={muted ? 'Master Audio Muted' : 'Master Audio On'}
               className="w-9 h-9 rounded-lg bg-[#080B14]/94 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
             >
               {muted ? (

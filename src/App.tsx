@@ -39,10 +39,30 @@ export default function App() {
   const [pauseMenuOpen, setPauseMenuOpen] = useState(false);
   const [tabHeld, setTabHeld] = useState(false);
   const [muted, setMuted] = useState(() => gameAudio.isMuted());
+  const [musicMuted, setMusicMuted] = useState(() => gameAudio.isMusicMuted());
   const [connectSlow, setConnectSlow] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
+
+  // Unlock Web Audio and run Title Screen Cathedral Theme on first user gesture
+  useEffect(() => {
+    const unlock = () => {
+      gameAudio.unlock();
+      if (!launchConfig) {
+        gameAudio.setMusicMode('menu');
+      }
+    };
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+    if (!launchConfig) {
+      gameAudio.setMusicMode('menu');
+    }
+    return () => {
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+    };
+  }, [launchConfig]);
 
   useEffect(() => {
     if (!launchConfig || launchConfig.mode !== 'online' || hud) {
@@ -170,6 +190,10 @@ export default function App() {
     setMuted(gameAudio.toggleMute());
   }, []);
 
+  const handleToggleMusic = useCallback(() => {
+    setMusicMuted(gameAudio.toggleMusicMute());
+  }, []);
+
   const handleTogglePause = useCallback(() => {
     setShopOpen(false);
     setPauseMenuOpen((prev) => {
@@ -245,6 +269,8 @@ export default function App() {
   }
 
   const isFinished = hud?.phase === 'VICTORY' || hud?.phase === 'DEFEAT';
+  const endCinematicActive = Boolean(isFinished && hud?.endCinematic?.active);
+  const showEndModal = Boolean(isFinished && (!hud?.endCinematic || hud.endCinematic.completed));
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0A101D]">
@@ -297,17 +323,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Perimeter Low-Occlusion HUD */}
-      {hud && (
+      {/* Perimeter Low-Occlusion HUD (hidden during widescreen Victory/Defeat cinematic) */}
+      {hud && !endCinematicActive && !showEndModal && (
         <GameHud
           hud={hud}
           muted={muted}
+          musicMuted={musicMuted}
           shopOpen={shopOpen}
           onToggleShop={() => {
             setPauseMenuOpen(false);
             setShopOpen((p) => !p);
           }}
           onToggleMute={handleToggleMute}
+          onToggleMusic={handleToggleMusic}
           onTogglePause={handleTogglePause}
           onRecall={handleRecall}
         />
@@ -332,15 +360,17 @@ export default function App() {
         <PauseModal
           hud={hud}
           muted={muted}
+          musicMuted={musicMuted}
           onResume={handleResume}
           onSwitchHero={handleSwitchHero}
           onToggleMute={handleToggleMute}
+          onToggleMusic={handleToggleMusic}
           onExitToTitle={handleExitToTitle}
         />
       )}
 
-      {/* Victory / Defeat Modal (Never Auto-Restarts) */}
-      {hud && isFinished && (
+      {/* Victory / Defeat Modal (Reveals after Cinematic Fanfare & Never Auto-Restarts) */}
+      {hud && showEndModal && (
         <EndMatchModal
           hud={hud}
           onRequeueToLobby={handleRequeueToLobby}

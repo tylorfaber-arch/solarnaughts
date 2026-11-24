@@ -15,7 +15,7 @@ import type {
   SimFxEvent,
   WorldSnapshot,
 } from './netTypes';
-import { renderArena } from './renderer';
+import { renderArena, type EndCinematicRenderState } from './renderer';
 import { ArenaSimulation } from './sim';
 import type {
   CoreDrillEntity,
@@ -111,6 +111,7 @@ export class GameEngine {
   private camY = 0;
   private particles: Particle[] = [];
   private floatingTexts: FloatingText[] = [];
+  private endCinematic: (EndCinematicRenderState & { burstStage: number }) | null = null;
 
   // Input state
   private heldKeys = new Set<string>();
@@ -170,10 +171,12 @@ export class GameEngine {
     this.playerEntityId = p.id;
     this.playerTeam = p.team;
     this.phase = 'PLAYING';
+    this.endCinematic = null;
     this.particles = [];
     this.floatingTexts = [];
     this.camX = Math.max(0, p.dropPodX - this.canvas.width * 0.5);
     this.camY = Math.max(0, Math.min(WORLD_H - this.canvas.height, 260));
+    gameAudio.setMusicMode('battle');
   }
 
   private connectOnline(): void {
@@ -247,6 +250,9 @@ export class GameEngine {
           this.camX = Math.max(0, me.x - this.canvas.width * 0.5);
           this.camY = Math.max(0, Math.min(WORLD_H - this.canvas.height, 260));
         }
+        if (this.phase === 'PLAYING') {
+          gameAudio.setMusicMode('battle');
+        }
         this.emitHud();
       } else if (msg.type === 'state') {
         this.applyServerSnapshot(msg.snapshot, false);
@@ -304,7 +310,10 @@ export class GameEngine {
       this.lastTs = ts;
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
-      if (this.mode === 'solo') {
+      if (this.phase === 'VICTORY' || this.phase === 'DEFEAT') {
+        // Pause gameplay flow cleanly while running the Victory/Defeat cinematic!
+        this.updateEndCinematic(dt);
+      } else if (this.mode === 'solo') {
         if (this.phase === 'PLAYING') {
           this.updateSolo(dt);
         }
@@ -359,6 +368,7 @@ export class GameEngine {
   public restartMatch(playerHeroId: HeroId, difficulty: Difficulty): void {
     this.heroId = playerHeroId;
     this.difficulty = difficulty;
+    this.endCinematic = null;
     if (this.mode === 'solo') {
       this.initSolo(playerHeroId, difficulty);
       this.emitHud();
@@ -366,6 +376,14 @@ export class GameEngine {
       const msg: ClientToServerMessage = { type: 'restart', heroId: playerHeroId };
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  public skipEndCinematic(): void {
+    if (!this.endCinematic || !this.endCinematic.active || !this.endCinematic.canSkip) return;
+    this.endCinematic.active = false;
+    this.endCinematic.completed = true;
+    this.endCinematic.elapsed = this.endCinematic.duration;
+    this.emitHud();
   }
 
   public switchPlayerHero(nextHeroId: HeroId): boolean {
@@ -420,9 +438,14 @@ export class GameEngine {
 
   // === INPUT HANDLING ===
   private handleKeyDown = (e: KeyboardEvent) => {
+    gameAudio.unlock();
     if (e.repeat) return;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
       e.preventDefault();
+    }
+    if (this.endCinematic?.active && this.endCinematic.canSkip && (e.code === 'Space' || e.code === 'Enter')) {
+      this.skipEndCinematic();
+      return;
     }
     this.heldKeys.add(e.code);
 
@@ -445,6 +468,11 @@ export class GameEngine {
   };
 
   private handleMouseDown = (e: MouseEvent) => {
+    gameAudio.unlock();
+    if (this.endCinematic?.active && this.endCinematic.canSkip) {
+      this.skipEndCinematic();
+      return;
+    }
     if (this.phase !== 'PLAYING') return;
     if (e.button === 0) this.mouseDownLeft = true;
     else if (e.button === 2) this.queuedSkill1 = true;
@@ -525,17 +553,117 @@ export class GameEngine {
     }
 
     this.localSim.step(dt);
-    this.phase = this.localSim.phase;
+    const nextPhase = this.localSim.phase;
+    this.phase = nextPhase;
     this.renderTime = this.localSim.matchTime;
     this.waveTier = this.localSim.waveTier;
     this.waveTierName = this.localSim.waveTierName;
     this.processFxEvents(this.localSim.drainFx());
 
+    if (nextPhase === 'VICTORY' || nextPhase === 'DEFEAT') {
+      const winner: Team = nextPhase === 'VICTORY' ? 'blue' : 'red';
+      this.startEndCinematic(winner);
+      this.clearEdgeTriggers();
+      return;
+    }
+
+    this.syncDynamicMusic(this.localSim.cores);
     this.updateEffects(dt);
     if (player) this.updateCamera(player, dt);
     this.updateShake(dt);
 
     this.clearEdgeTriggers();
+  }
+
+  private syncDynamicMusic(cores: CoreDrillEntity[]): void {
+    if (this.phase !== 'PLAYING') return;
+    const anyCoreExposed = cores.some((c) => !c.shielded);
+    gameAudio.setMusicMode(this.waveTier >= 5 || anyCoreExposed ? 'tension' : 'battle');
+  }
+
+  private startEndCinematic(winner: Team): void {
+    if (this.endCinematic) return;
+    const cores = this.mode === 'solo' && this.localSim ? this.localSim.cores : Array.from(this.mirrorCores.values());
+    const shatteredCore = cores.find((c) => c.team !== winner) ?? cores[0];
+    const coreX = shatteredCore ? shatteredCore.x : WORLD_W * 0.5;
+    const coreY = shatteredCore ? shatteredCore.y : 900;
+    const localWon = winner === this.playerTeam;
+
+    this.clearHeldInputs();
+    this.endCinematic = {
+      active: true,
+      completed: false,
+      winner,
+      localWon,
+      elapsed: 0,
+      duration: 3.85,
+      canSkip: false,
+      coreX,
+      coreY,
+      burstStage: 0,
+    };
+
+    if (localWon) gameAudio.playVictoryFanfare();
+    else gameAudio.playDefeatRequiem();
+
+    // Opening Core Shatter Detonation
+    this.addShake(19);
+    this.spawnRing(coreX, coreY - 110, 185, localWon ? '#FEF08A' : '#F43F5E');
+    this.spawnRing(coreX, coreY - 110, 125, '#FFFFFF');
+    this.spawnParticles(coreX, coreY - 110, localWon ? '#FBBF24' : '#F43F5E', 38, 360, 'spark');
+    this.spawnParticles(coreX, coreY - 110, winner === 'blue' ? '#38BDF8' : '#FB7185', 26, 280, 'square');
+    this.emitHud();
+  }
+
+  private updateEndCinematic(dt: number): void {
+    if (!this.endCinematic) {
+      const winner: Team =
+        this.phase === 'VICTORY' ? this.playerTeam : this.playerTeam === 'blue' ? 'red' : 'blue';
+      this.startEndCinematic(winner);
+      if (!this.endCinematic) return;
+    }
+
+    const cin = this.endCinematic;
+    // Slow-motion ambient animation time (lets particles, shatter rays & hero celebrations breathe while sim is paused)
+    this.renderTime += dt * 0.68;
+
+    // Smooth cinematic camera glide onto the shattered Ancient Core
+    const vw = this.canvas.width;
+    const vh = this.canvas.height;
+    const targetX = Math.max(0, Math.min(Math.max(0, WORLD_W - vw), cin.coreX - vw * 0.5));
+    const targetY = Math.max(0, Math.min(Math.max(0, WORLD_H - vh), cin.coreY - 125 - vh * 0.5));
+    const camLerp = Math.min(1, dt * 3.4);
+    this.camX += (targetX - this.camX) * camLerp;
+    this.camY += (targetY - this.camY) * camLerp;
+
+    if (cin.active) {
+      cin.elapsed += dt;
+      cin.canSkip = cin.elapsed >= 1.1;
+
+      // Choreographed slow-motion chain explosions along the collapsing Core
+      const burstTimes = [0.34, 0.78, 1.32, 1.95];
+      if (cin.burstStage < burstTimes.length && cin.elapsed >= burstTimes[cin.burstStage]) {
+        const stage = cin.burstStage;
+        cin.burstStage++;
+        const ox = (stage % 2 === 0 ? -1 : 1) * (26 + stage * 12);
+        const oy = -70 - stage * 28;
+        const primaryCol = cin.localWon ? '#FBBF24' : '#F43F5E';
+        const secondaryCol = cin.winner === 'blue' ? '#38BDF8' : '#FB7185';
+        this.addShake(13 - stage * 2);
+        this.spawnRing(cin.coreX + ox, cin.coreY + oy, 130 + stage * 24, primaryCol);
+        this.spawnParticles(cin.coreX + ox, cin.coreY + oy, primaryCol, 24, 300, 'spark');
+        this.spawnParticles(cin.coreX + ox, cin.coreY + oy, secondaryCol, 18, 220, 'square');
+      }
+
+      if (cin.elapsed >= cin.duration) {
+        cin.active = false;
+        cin.completed = true;
+        this.emitHud();
+      }
+    }
+
+    this.updateEffects(dt * 0.65);
+    this.updateShake(dt);
   }
 
   // === ONLINE 60FPS PREDICTED + RECONCILED UPDATE ===
@@ -618,6 +746,7 @@ export class GameEngine {
       p.y += p.vy * dt;
     }
 
+    this.syncDynamicMusic(Array.from(this.mirrorCores.values()));
     this.updateEffects(dt);
     if (me) this.updateCamera(me, dt);
     this.updateShake(dt);
@@ -833,8 +962,14 @@ export class GameEngine {
 
     if (snap.phase === 'VICTORY' || snap.phase === 'DEFEAT') {
       const blueWon = snap.phase === 'VICTORY';
+      const winner: Team = blueWon ? 'blue' : 'red';
       this.phase = (this.playerTeam === 'blue') === blueWon ? 'VICTORY' : 'DEFEAT';
+      this.startEndCinematic(winner);
     } else {
+      if (this.phase === 'VICTORY' || this.phase === 'DEFEAT') {
+        this.endCinematic = null;
+        gameAudio.setMusicMode('battle');
+      }
       this.phase = snap.phase;
     }
 
@@ -1417,8 +1552,7 @@ export class GameEngine {
           }
         }
       } else if (ev.kind === 'victory') {
-        if (ev.winner === this.playerTeam) gameAudio.victory();
-        else gameAudio.defeat();
+        this.startEndCinematic(ev.winner);
         this.clearHeldInputs();
       }
     }
@@ -1578,6 +1712,7 @@ export class GameEngine {
       hazards,
       particles: this.particles,
       floatingTexts: this.floatingTexts,
+      endCinematic: this.endCinematic,
     });
   }
 
@@ -1713,6 +1848,16 @@ export class GameEngine {
       })),
       takenHumanHeroes,
       scoreboard,
+      endCinematic: this.endCinematic
+        ? {
+            active: this.endCinematic.active,
+            completed: this.endCinematic.completed,
+            winner: this.endCinematic.winner,
+            elapsed: this.endCinematic.elapsed,
+            duration: this.endCinematic.duration,
+            canSkip: this.endCinematic.canSkip,
+          }
+        : null,
     });
   }
 }

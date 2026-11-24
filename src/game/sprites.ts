@@ -1,11 +1,26 @@
 import type { HeroId } from './types';
 
+export interface ArticulatedHeroRig {
+  headRatio: number;
+  waistRatio: number;
+  isFloating: boolean;
+  headCanvas: HTMLCanvasElement;
+  headFlash: HTMLCanvasElement;
+  torsoCanvas: HTMLCanvasElement;
+  torsoFlash: HTMLCanvasElement;
+  backLegCanvas: HTMLCanvasElement;
+  backLegFlash: HTMLCanvasElement;
+  frontLegCanvas: HTMLCanvasElement;
+  frontLegFlash: HTMLCanvasElement;
+}
+
 export interface ProcessedSprite {
   canvas: HTMLCanvasElement;
   flashCanvas: HTMLCanvasElement;
   width: number;
   height: number;
   aspect: number;
+  rig?: ArticulatedHeroRig;
 }
 
 export interface ArenaArtAssets {
@@ -361,6 +376,141 @@ function loadRawImage(url: string, onLoad: (img: HTMLImageElement) => void): voi
   img.src = url;
 }
 
+const HERO_RIG_SPEC: Record<HeroId, { headRatio: number; waistRatio: number; isFloating: boolean }> = {
+  marrow: { headRatio: 0.31, waistRatio: 0.64, isFloating: false },
+  seraph: { headRatio: 0.28, waistRatio: 0.6, isFloating: false },
+  korak: { headRatio: 0.3, waistRatio: 0.58, isFloating: true },
+  vorg: { headRatio: 0.3, waistRatio: 0.62, isFloating: false },
+  bastion: { headRatio: 0.29, waistRatio: 0.63, isFloating: false },
+  vexia: { headRatio: 0.28, waistRatio: 0.6, isFloating: false },
+  xylar: { headRatio: 0.29, waistRatio: 0.61, isFloating: false },
+  caldris: { headRatio: 0.29, waistRatio: 0.57, isFloating: true },
+  vespra: { headRatio: 0.29, waistRatio: 0.61, isFloating: false },
+  vale: { headRatio: 0.28, waistRatio: 0.6, isFloating: false },
+};
+
+function makeFlashFromCanvas(src: HTMLCanvasElement): HTMLCanvasElement {
+  const flash = document.createElement('canvas');
+  flash.width = src.width;
+  flash.height = src.height;
+  const fctx = flash.getContext('2d');
+  if (fctx) {
+    fctx.drawImage(src, 0, 0);
+    fctx.globalCompositeOperation = 'source-in';
+    fctx.fillStyle = '#FFFFFF';
+    fctx.fillRect(0, 0, src.width, src.height);
+  }
+  return flash;
+}
+
+/**
+ * Slices a processed inked champion sprite into feathered, overlapping anatomical layers
+ * (head, upper torso, back leg, front leg) so the renderer can drive true Awesomenauts-style
+ * multi-limb run cycles, jump tucks, attack windups/snaps, hurt staggers, and victory poses.
+ */
+function buildArticulatedHeroRig(sprite: ProcessedSprite, heroId: HeroId): ArticulatedHeroRig | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const spec = HERO_RIG_SPEC[heroId] ?? { headRatio: 0.29, waistRatio: 0.61, isFloating: false };
+  const w = sprite.width;
+  const h = sprite.height;
+
+  const srcCtx = sprite.canvas.getContext('2d', { willReadFrequently: true });
+  if (!srcCtx) return undefined;
+  const srcData = srcCtx.getImageData(0, 0, w, h).data;
+
+  const headY = Math.round(h * spec.headRatio);
+  const waistY = Math.round(h * spec.waistRatio);
+  const featherY = Math.max(4, Math.round(h * 0.045));
+  const featherX = Math.max(3, Math.round(w * 0.04));
+
+  // Find weighted center X of lower-body pixels to cleanly bisect left & right legs
+  let legSumX = 0;
+  let legCount = 0;
+  for (let y = waistY; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const a = srcData[(y * w + x) * 4 + 3];
+      if (a > 40) {
+        legSumX += x;
+        legCount++;
+      }
+    }
+  }
+  const splitX = legCount > 12 ? legSumX / legCount : w * 0.5;
+
+  const makeSlice = (weightFn: (x: number, y: number) => number, shade = 1): HTMLCanvasElement => {
+    const out = document.createElement('canvas');
+    out.width = w;
+    out.height = h;
+    const octx = out.getContext('2d');
+    if (!octx) return out;
+    const img = octx.createImageData(w, h);
+    const dst = img.data;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = (y * w + x) * 4;
+        const a = srcData[idx + 3];
+        if (a === 0) continue;
+        const wt = weightFn(x, y);
+        if (wt <= 0.005) continue;
+        dst[idx] = Math.round(srcData[idx] * shade);
+        dst[idx + 1] = Math.round(srcData[idx + 1] * shade);
+        dst[idx + 2] = Math.round(srcData[idx + 2] * shade);
+        dst[idx + 3] = Math.min(255, Math.round(a * wt));
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    return out;
+  };
+
+  const smoothstep = (edge0: number, edge1: number, val: number): number => {
+    const t = Math.max(0, Math.min(1, (val - edge0) / Math.max(0.001, edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  };
+
+  // Head/Helmet slice (top -> headY + feather)
+  const headCanvas = makeSlice((_x, y) => 1 - smoothstep(headY - featherY * 0.35, headY + featherY * 1.15, y));
+
+  // Upper Torso slice (headY - feather -> waistY + feather)
+  const torsoCanvas = makeSlice((_x, y) => {
+    const topFade = smoothstep(headY - featherY * 0.9, headY + featherY * 0.45, y);
+    const botFade = 1 - smoothstep(waistY - featherY * 0.3, waistY + featherY * 1.2, y);
+    return topFade * botFade;
+  });
+
+  // Lower body slices:
+  // For grounded bipedal champions -> distinct Rear Leg (left half, slightly shaded for depth) + Front Leg (right half)
+  // For floating champions (Korak, Caldris) -> Flowing back cloak hem + front robe hem
+  const backLegCanvas = makeSlice((x, y) => {
+    const topFade = smoothstep(waistY - featherY * 1.1, waistY + featherY * 0.45, y);
+    const sideFade = spec.isFloating
+      ? 1 - smoothstep(splitX - featherX * 1.5, splitX + featherX * 2.5, x)
+      : 1 - smoothstep(splitX - featherX * 0.4, splitX + featherX * 1.1, x);
+    return topFade * sideFade;
+  }, 0.87);
+
+  const frontLegCanvas = makeSlice((x, y) => {
+    const topFade = smoothstep(waistY - featherY * 1.1, waistY + featherY * 0.45, y);
+    const sideFade = spec.isFloating
+      ? smoothstep(splitX - featherX * 2.5, splitX + featherX * 1.5, x)
+      : smoothstep(splitX - featherX * 1.1, splitX + featherX * 0.4, x);
+    return topFade * sideFade;
+  }, 1.0);
+
+  return {
+    headRatio: spec.headRatio,
+    waistRatio: spec.waistRatio,
+    isFloating: spec.isFloating,
+    headCanvas,
+    headFlash: makeFlashFromCanvas(headCanvas),
+    torsoCanvas,
+    torsoFlash: makeFlashFromCanvas(torsoCanvas),
+    backLegCanvas,
+    backLegFlash: makeFlashFromCanvas(backLegCanvas),
+    frontLegCanvas,
+    frontLegFlash: makeFlashFromCanvas(frontLegCanvas),
+  };
+}
+
 export function ensureArenaArtLoaded(ctx?: CanvasRenderingContext2D): ArenaArtAssets {
   if (!preloadStarted && typeof window !== 'undefined') {
     preloadStarted = true;
@@ -381,7 +531,10 @@ export function ensureArenaArtLoaded(ctx?: CanvasRenderingContext2D): ArenaArtAs
     (Object.keys(HERO_SPRITE_URLS) as HeroId[]).forEach((heroId) => {
       loadRawImage(HERO_SPRITE_URLS[heroId], (img) => {
         const processed = processInkedSprite(img, 360, true);
-        if (processed) assets.heroes[heroId] = processed;
+        if (processed) {
+          processed.rig = buildArticulatedHeroRig(processed, heroId);
+          assets.heroes[heroId] = processed;
+        }
       });
     });
 
