@@ -71,6 +71,12 @@ export class GameEngine {
   private sharpenBackoff = 8;
   /** Seconds left in which a drop counts as "the last sharpen step failed". */
   private sharpenTrial = 0;
+  private wasHidden = false;
+  private fpsMeterTime = 0;
+  private fpsMeterFrames = 0;
+  private fpsMeterValue = 0;
+  /** ?fps shows a small frame-rate / render-scale readout in the corner. */
+  private readonly showFps = typeof location !== 'undefined' && new URLSearchParams(location.search).has('fps');
   /** ?scale=0.75 forces a fixed render scale (dynamic resolution off); ?scale=1 forces full res. */
   private readonly forcedScale: number | null = (() => {
     if (typeof location === 'undefined') return null;
@@ -1601,7 +1607,29 @@ export class GameEngine {
     const ch = this.canvas.clientHeight;
     if (!cw || !ch) return;
 
-    if (this.forcedScale === null && rawDt > 0 && rawDt < 0.25) {
+    // A hidden/backgrounded tab is throttled by the browser: those frame times say nothing about
+    // how fast the game can render, so never let them lower the resolution.
+    const hidden = typeof document !== 'undefined' && document.hidden;
+    if (hidden) {
+      this.perfTime = 0;
+      this.perfFrames = 0;
+      this.wasHidden = true;
+    } else if (this.wasHidden) {
+      // Back in focus: settle for a moment, then allow sharpening again right away
+      this.wasHidden = false;
+      this.perfCooldown = 1;
+      this.sharpenBlockedFor = 0;
+      this.sharpenBackoff = 8;
+    }
+    this.fpsMeterTime += rawDt;
+    this.fpsMeterFrames += 1;
+    if (this.fpsMeterTime >= 0.5) {
+      this.fpsMeterValue = this.fpsMeterFrames / this.fpsMeterTime;
+      this.fpsMeterTime = 0;
+      this.fpsMeterFrames = 0;
+    }
+
+    if (!hidden && this.forcedScale === null && rawDt > 0 && rawDt < 0.25) {
       this.perfTime += rawDt;
       this.perfFrames += 1;
       this.sharpenBlockedFor = Math.max(0, this.sharpenBlockedFor - rawDt);
@@ -1807,6 +1835,16 @@ export class GameEngine {
       floatingTexts: this.floatingTexts,
       endCinematic: this.endCinematic,
     });
+    if (this.showFps) {
+      const label = `${Math.round(this.fpsMeterValue)} fps  ·  render ${Math.round(renderScale * 100)}%  ·  ${this.canvas.width}x${this.canvas.height}`;
+      this.ctx.save();
+      this.ctx.font = '600 12px "JetBrains Mono", monospace';
+      this.ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      this.ctx.fillRect(12, 44, this.ctx.measureText(label).width + 16, 22);
+      this.ctx.fillStyle = this.fpsMeterValue >= 55 ? '#4ADE80' : this.fpsMeterValue >= 40 ? '#FDE047' : '#F87171';
+      this.ctx.fillText(label, 20, 60);
+      this.ctx.restore();
+    }
   }
 
   private emitHud(): void {
