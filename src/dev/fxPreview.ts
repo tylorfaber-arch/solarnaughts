@@ -5,6 +5,7 @@ import { ArenaSimulation } from '../game/sim';
 import { drawHero } from '../game/renderer';
 import { ensureArenaArtLoaded } from '../game/sprites';
 import { vfxBeginFrame, vfxDrawParticles, vfxDrawTrails, vfxTrackProjectile } from '../game/vfx';
+import { getHurtboxes } from '../game/hitboxes';
 import { hazardVfx, heroAbilityVfx, heroAuraVfx, type AbilityTag } from '../game/heroVfx';
 import type { HazardZoneEntity, HeroEntity, HeroId, ProjectileEntity } from '../game/types';
 
@@ -42,15 +43,20 @@ slowBtn.onclick = () => { slow = slow === 1 ? 0.25 : 1; lbl(); };
 lbl(); ui.append(slowBtn);
 const phaseLbl = document.createElement('span'); phaseLbl.style.padding = '4px 8px'; ui.append(phaseLbl);
 
-const SCALE = 1.25;
+const ONLY = new URLSearchParams(location.search).get('only') as HeroId | null;
+const SCALE = ONLY ? 3.2 : 1.25;
+const SHOW_HB = new URLSearchParams(location.search).has('hitboxes');
+// ?still freezes the loop so sprites can be compared with their boxes
+const STILL = new URLSearchParams(location.search).has('still');
 const sim = new ArenaSimulation('marrow', 'standard', true);
 const tmpl = sim.heroes[0];
 const cols = 5;
 const cw = canvas.width / SCALE / cols;
 const ch = canvas.height / SCALE / 2;
-const heroes: HeroEntity[] = HEROES.map((id, i) => ({
+const heroes: HeroEntity[] = (ONLY ? [ONLY] : HEROES).map((id, i) => ({
   ...tmpl, id: `fx_${id}`, heroId: id, name: id, team: 'blue', isPlayer: false,
-  x: (i % cols) * cw + cw * 0.3, y: Math.floor(i / cols) * ch + ch * 0.62,
+  x: ONLY ? canvas.width / SCALE / 2 : (i % cols) * cw + cw * 0.3,
+  y: ONLY ? canvas.height / SCALE * 0.55 : Math.floor(i / cols) * ch + ch * 0.62,
   vx: 0, vy: 0, grounded: true, facing: 1, aimAngle: -0.08, inDropPod: false, alive: true,
   recallTimer: 0, dashTimer: 0, spinTimer: 0, cloakTimer: 0, rotTimer: 0, hasteTimer: 0, meltdownTimer: 0, meltdownMaxTimer: 2.75,
   hitFlashTimer: 0, recoilTimer: 0, skill1Cd: 0, skill2Cd: 0, walkCycle: 0, squashX: 1, squashY: 1, hp: tmpl.maxHp,
@@ -65,7 +71,7 @@ const fired = new Set<string>();
 function once(key: string, cond: boolean, fn: () => void) { if (cond && !fired.has(key)) { fired.add(key); fn(); } }
 
 function frame(now: number) {
-  const dt = Math.min(0.05, (now - last) / 1000) * slow; last = now; t += dt;
+  const dt = STILL ? 0 : Math.min(0.05, (now - last) / 1000) * slow; last = now; t += dt;
   const loop = Math.floor(t / CYCLE), ct = t % CYCLE;
   phaseLbl.textContent = ct < 1.6 ? 'primary fire' : ct < 3.6 ? 'Q (skill 1)' : 'E (skill 2)';
   vfxBeginFrame(t);
@@ -139,6 +145,13 @@ function frame(now: number) {
     ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, Math.min(6, p.radius * 0.6), 0, Math.PI * 2); ctx.fill();
   }
   vfxDrawParticles(ctx);
+  if (SHOW_HB) {
+    const ZC = { head: '#F43F5E', torso: '#FB923C', legs: '#FDE047' } as const;
+    ctx.lineWidth = 1.2;
+    for (const h of heroes) for (const b of getHurtboxes(h)) {
+      ctx.strokeStyle = ZC[b.zone]; ctx.strokeRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+    }
+  }
   if (fired.size > 4000) fired.clear();
   requestAnimationFrame(frame);
 }

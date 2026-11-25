@@ -95,9 +95,11 @@ export default function App() {
     if (!launchConfig || !canvasRef.current) return;
     const canvas = canvasRef.current;
 
+    // Backing resolution is managed by the engine every frame (static cap + dynamic resolution),
+    // so this only seeds a sensible initial size.
     const resize = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      canvas.width = Math.min(window.innerWidth, 1920);
+      canvas.height = Math.min(window.innerHeight, 1080);
     };
     resize();
     window.addEventListener('resize', resize);

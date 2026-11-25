@@ -1,3 +1,4 @@
+import { sweepHero, type HeroHit } from './hitboxes';
 import {
   ASCENSION_INFUSIONS,
   canForgeAscension,
@@ -97,6 +98,8 @@ export class ArenaSimulation {
   public projectiles: ProjectileEntity[] = [];
   public summons: SummonEntity[] = [];
   public hooks: HookEntity[] = [];
+  /** where on the victim the hook claw grabbed, so the victim hangs off the claw instead of snapping to its centre */
+  private hookGrabOffset = new Map<string, { dx: number; dy: number }>();
   public hazards: HazardZoneEntity[] = [];
 
   public humanIds = new Set<string>();
@@ -2695,20 +2698,29 @@ export class ArenaSimulation {
       hk.startY = owner.y - 4;
 
       if (hk.state === 'extending') {
+        const prevX = hk.x;
+        const prevY = hk.y;
         hk.x += hk.vx * dt;
         hk.y += hk.vy * dt;
 
-        // Check enemy champions first (prioritize champions!)
+        // Check enemy champions first (prioritize champions!) — swept claw vs hurtboxes,
+        // latching onto the FIRST hero along the chain's path rather than whoever is first in the list.
+        const CLAW_RADIUS = 10;
         let hitHero: HeroEntity | null = null;
+        let best: HeroHit | null = null;
         for (const other of this.heroes) {
           if (!other.alive || other.inDropPod || other.team === hk.team) continue;
-          if (Math.hypot(other.x - hk.x, other.y - hk.y) <= 34) {
+          const hit = sweepHero(other, prevX, prevY, hk.x, hk.y, CLAW_RADIUS);
+          if (hit && (!best || hit.t < best.t)) {
+            best = hit;
             hitHero = other;
-            break;
           }
         }
 
-        if (hitHero) {
+        if (hitHero && best) {
+          hk.x = best.x;
+          hk.y = best.y;
+          this.hookGrabOffset.set(hk.id, { dx: hitHero.x - best.x, dy: hitHero.y - best.y });
           hk.state = 'retracting';
           hk.latchedTargetId = hitHero.id;
           hk.latchedTargetKind = 'hero';
@@ -2725,7 +2737,7 @@ export class ArenaSimulation {
           if (ownerStats.capstones['mh_q3']) {
             owner.skill1Cd *= 0.55;
           }
-          this.emitFx({ kind: 'ability', tag: 'hook_hit', x: hitHero.x, y: hitHero.y, ownerId: owner.id });
+          this.emitFx({ kind: 'ability', tag: 'hook_hit', x: best.x, y: best.y, ownerId: owner.id });
           this.emitFx({ kind: 'text', x: hitHero.x, y: hitHero.y - 42, text: 'HOOKED!', color: '#34D399', scale: 1.25 });
           this.emitFx({ kind: 'ring', x: hitHero.x, y: hitHero.y, radius: 44, color: '#10B981' });
         } else {
@@ -2733,7 +2745,7 @@ export class ArenaSimulation {
           let hitDroid: DroidEntity | null = null;
           for (const d of this.droids) {
             if (d.team === hk.team) continue;
-            if (Math.hypot(d.x - hk.x, d.y - hk.y) <= 28) {
+            if (distPointToSegment(d.x, d.y, prevX, prevY, hk.x, hk.y) <= 28) {
               hitDroid = d;
               break;
             }
@@ -2770,8 +2782,9 @@ export class ArenaSimulation {
         if (hk.latchedTargetId && hk.latchedTargetKind === 'hero') {
           const victim = this.heroes.find((h) => h.id === hk.latchedTargetId);
           if (victim && victim.alive && !victim.inDropPod) {
-            victim.x = hk.x;
-            victim.y = hk.y;
+            const off = this.hookGrabOffset.get(hk.id);
+            victim.x = hk.x + (off?.dx ?? 0);
+            victim.y = hk.y + (off?.dy ?? 0);
             victim.vx = 0;
             victim.vy = 0;
           } else {
@@ -2793,6 +2806,7 @@ export class ArenaSimulation {
   }
 
   private releaseHookTarget(hk: HookEntity): void {
+    this.hookGrabOffset.delete(hk.id);
     if (hk.latchedTargetId && hk.latchedTargetKind === 'hero') {
       const victim = this.heroes.find((h) => h.id === hk.latchedTargetId);
       if (victim) {
@@ -3486,6 +3500,8 @@ export class ArenaSimulation {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       p.life -= dt;
+      const prevX = p.x;
+      const prevY = p.y;
       p.vy += p.gravity * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -3588,10 +3604,23 @@ export class ArenaSimulation {
 
       let consumed = false;
 
-      // Enemy Heroes
+      // Enemy Heroes — swept test against head/torso/legs hurtboxes (see hitboxes.ts), processed in
+      // the order the shot reaches them, so a non-piercing shot hits the FIRST hero in its path.
+      const heroHits: { h: HeroEntity; hit: HeroHit }[] = [];
       for (const h of this.heroes) {
         if (!h.alive || h.inDropPod || h.team === p.team || p.hitIds.has(h.id)) continue;
-        if (Math.hypot(h.x - p.x, h.y - p.y) <= p.radius + Math.max(h.w, h.h) * 0.45) {
+        const hit = sweepHero(h, prevX, prevY, p.x, p.y, p.radius);
+        if (hit) heroHits.push({ h, hit });
+      }
+      heroHits.sort((a, b) => a.hit.t - b.hit.t);
+      for (const { h, hit } of heroHits) {
+        {
+          // Explosions, zones and hit sparks start where the shot actually touched the body
+          // (piercing shots keep flying, so they keep their position)
+          if (!p.pierce) {
+            p.x = hit.x;
+            p.y = hit.y;
+          }
           p.hitIds.add(h.id);
           if (p.kind === 'singularity_orb') {
             this.spawnSingularity(p);
@@ -4537,4 +4566,13 @@ export class ArenaSimulation {
       aimWorldY,
     };
   }
+}
+
+/** Shortest distance from point (px, py) to segment (ax, ay)-(bx, by). */
+function distPointToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0;
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
 }

@@ -2,6 +2,7 @@ import { HERO_MAP } from './heroes';
 import { BASE_ZONES, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
 import { ensureArenaArtLoaded, type ArenaArtAssets, type ProcessedSprite } from './sprites';
 import { drawGlow, vfxBeginFrame, vfxCastBurst, vfxDrawParticles, vfxDrawTrails, vfxTrackProjectile } from './vfx';
+import { getHurtboxes, HERO_SPRITE_HEIGHT } from './hitboxes';
 import { hazardVfx, heroAuraVfx, heroMuzzle, heroSlash, hookVfx, summonVfx } from './heroVfx';
 import type {
   CoreDrillEntity,
@@ -77,6 +78,46 @@ const AMBIENT_MOTES = Array.from({ length: 46 }, (_, i) => ({
   phase: (i * 1.7) % (Math.PI * 2),
   size: 1.5 + (i % 3) * 0.85,
 }));
+
+const SHOW_HITBOXES =
+  typeof location !== 'undefined' && new URLSearchParams(location.search).has('hitboxes');
+
+/**
+ * Hitbox debug overlay (add ?hitboxes to the URL). Draws exactly what sim.ts tests:
+ *  - hurtboxes per hero: red = head, orange = torso, yellow = legs (from hitboxes.ts)
+ *  - thin grey rect: physics body (w x h) used for movement & platforms only
+ *  - white circles: each live projectile's hit radius; small circle at the hook claw
+ */
+function drawHitboxDebug(ctx: CanvasRenderingContext2D, state: RenderState): void {
+  const ZONE_COLOR = { head: '#F43F5E', torso: '#FB923C', legs: '#FDE047' } as const;
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  for (const h of state.heroes) {
+    if (!h.alive || h.inDropPod) continue;
+    for (const b of getHurtboxes(h)) {
+      ctx.fillStyle = ZONE_COLOR[b.zone] + '33';
+      ctx.strokeStyle = ZONE_COLOR[b.zone];
+      ctx.fillRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+      ctx.strokeRect(b.left, b.top, b.right - b.left, b.bottom - b.top);
+    }
+    ctx.strokeStyle = 'rgba(148,163,184,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(h.x - h.w / 2, h.y - h.h / 2, h.w, h.h);
+    ctx.lineWidth = 1.5;
+  }
+  ctx.strokeStyle = '#FFFFFF';
+  for (const p of state.projectiles) {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  for (const hk of state.hooks) {
+    ctx.beginPath();
+    ctx.arc(hk.x, hk.y, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 export function renderArena(
   ctx: CanvasRenderingContext2D,
@@ -245,6 +286,9 @@ export function renderArena(
   // 20b. Additive light VFX (impacts, muzzle flashes, cast flares, embers, smoke)
   vfxDrawParticles(ctx);
 
+  // Debug: add ?hitboxes to the URL to see what the sim actually collides against
+  if (SHOW_HITBOXES) drawHitboxDebug(ctx, state);
+
   // 21. Floating Combat Numbers
   for (const ft of state.floatingTexts) {
     const t = Math.max(0, ft.life / ft.maxLife);
@@ -264,18 +308,13 @@ export function renderArena(
   // === EXIT WORLD SPACE ===
 
   // 21b. Subtle Cathedral Edge Vignette (frames combat & sharpens HUD corner contrast)
-  const vig = ctx.createRadialGradient(
-    width * 0.5,
-    height * 0.5,
-    Math.min(width, height) * 0.36,
-    width * 0.5,
-    height * 0.5,
-    Math.max(width, height) * 0.72
-  );
-  vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  vig.addColorStop(1, 'rgba(4, 6, 13, 0.42)');
-  ctx.fillStyle = vig;
-  ctx.fillRect(0, 0, width, height);
+  drawCachedOverlay(ctx, 'vignette', width, height, (g, w, h) => {
+    const vig = g.createRadialGradient(w * 0.5, h * 0.5, Math.min(w, h) * 0.36, w * 0.5, h * 0.5, Math.max(w, h) * 0.72);
+    vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vig.addColorStop(1, 'rgba(4, 6, 13, 0.42)');
+    g.fillStyle = vig;
+    g.fillRect(0, 0, w, h);
+  });
 
   // 22. Tactical Aim Reticle (hidden during cinematic Victory/Defeat sequence)
   if (!state.endCinematic?.active && playerHero && playerHero.alive && !playerHero.inDropPod) {
@@ -288,6 +327,36 @@ export function renderArena(
   }
 
   ctx.restore();
+}
+
+const overlayCache = new Map<string, HTMLCanvasElement>();
+
+/**
+ * Screen-space gradient overlays (glaze, vignette) never change for a given screen size, so they
+ * are painted once into a small offscreen canvas and stretched over the screen each frame.
+ * Gradients are smooth, so a quarter-resolution copy looks identical.
+ */
+function drawCachedOverlay(
+  ctx: CanvasRenderingContext2D,
+  key: string,
+  width: number,
+  height: number,
+  paint: (g: CanvasRenderingContext2D, w: number, h: number) => void
+): void {
+  const w = Math.max(1, Math.round(width / 4));
+  const h = Math.max(1, Math.round(height / 4));
+  const id = `${key}|${w}x${h}`;
+  let c = overlayCache.get(id);
+  if (!c) {
+    c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d');
+    if (g) paint(g, w, h);
+    if (overlayCache.size > 16) overlayCache.clear();
+    overlayCache.set(id, c);
+  }
+  ctx.drawImage(c, 0, 0, width, height);
 }
 
 function drawPaintedCathedralBackdrop(
@@ -337,22 +406,23 @@ function drawPaintedCathedralBackdrop(
     ctx.restore();
   };
 
-  ctx.fillStyle = '#060912';
-  ctx.fillRect(0, 0, width, height);
-
-  // Layer the 3 painted cathedral vistas with seamless cross-fades & 2D parallax depth
-  drawCover(bgCrypt ?? bgSanctum ?? bgInvasion, 1, t);
-  if (wSanctum > 0.01) drawCover(bgSanctum, wSanctum, t * 0.9);
-  if (wCrypt > 0.01 && bgCrypt) drawCover(bgCrypt, wCrypt, t);
-  if (wInvasion > 0.01) drawCover(bgInvasion, wInvasion, Math.min(1, 0.1 + t * 0.9));
+  // Layer the 3 painted cathedral vistas with seamless cross-fades & 2D parallax depth.
+  // The opaque base layer covers the whole screen (1.22x overscan), so no clear fill is needed,
+  // and the Crypt is NOT drawn a second time on top of itself (it was a wasted full-screen pass).
+  const base = bgCrypt ?? bgSanctum ?? bgInvasion;
+  drawCover(base, 1, t);
+  if (wSanctum > 0.01 && bgSanctum !== base) drawCover(bgSanctum, wSanctum, t * 0.9);
+  if (wInvasion > 0.01 && bgInvasion !== base) drawCover(bgInvasion, wInvasion, Math.min(1, 0.1 + t * 0.9));
 
   // Balanced atmospheric depth glaze: vivid painted cathedral above, crisp silhouette readability below
-  const glaze = ctx.createLinearGradient(0, 0, 0, height);
-  glaze.addColorStop(0, 'rgba(5, 8, 16, 0.16)');
-  glaze.addColorStop(0.48, 'rgba(7, 11, 20, 0.27)');
-  glaze.addColorStop(1, 'rgba(6, 9, 16, 0.42)');
-  ctx.fillStyle = glaze;
-  ctx.fillRect(0, 0, width, height);
+  drawCachedOverlay(ctx, 'glaze', width, height, (g, w, h) => {
+    const glaze = g.createLinearGradient(0, 0, 0, h);
+    glaze.addColorStop(0, 'rgba(5, 8, 16, 0.16)');
+    glaze.addColorStop(0.48, 'rgba(7, 11, 20, 0.27)');
+    glaze.addColorStop(1, 'rgba(6, 9, 16, 0.42)');
+    g.fillStyle = glaze;
+    g.fillRect(0, 0, w, h);
+  });
 
   // Subtle biome color atmosphere pulse
   const pulse = 0.04 + 0.02 * Math.sin(time * 1.4);
@@ -2357,10 +2427,8 @@ function drawDropPodSequence(
   if (art.dropPod) {
     const podH = 78;
     const podW = podH * art.dropPod.aspect;
-    ctx.shadowColor = h.team === 'blue' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(244, 63, 94, 0.55)';
-    ctx.shadowBlur = 12;
+    drawBakedGlow(ctx, art.dropPod.canvas, h.team === 'blue' ? 'rgba(56, 189, 248, 0.55)' : 'rgba(244, 63, 94, 0.55)', 12, -podW / 2, -podH / 2, podW, podH);
     ctx.drawImage(art.dropPod.canvas, -podW / 2, -podH / 2, podW, podH);
-    ctx.shadowBlur = 0;
   } else {
     // Fallback Cathedral Reliquary Drop Pod
     ctx.fillStyle = h.team === 'blue' ? '#1E3A8A' : '#881337';
@@ -2392,18 +2460,7 @@ function drawDropPodSequence(
    CHAMPION RENDERER + 8 HAND-CRAFTED ARTICULATED 2D CHARACTER RIGS
    ========================================================================= */
 
-const HERO_SPRITE_HEIGHT: Record<HeroEntity['heroId'], number> = {
-  marrow: 92,
-  seraph: 94,
-  korak: 90,
-  vorg: 84,
-  bastion: 94,
-  vexia: 84,
-  xylar: 82,
-  caldris: 92,
-  vespra: 88,
-  vale: 90,
-};
+// HERO_SPRITE_HEIGHT lives in hitboxes.ts so hurtboxes and drawn sprites always share one size.
 
 // === AWESOMENAUTS-STYLE HERO ANIMATION STATE MACHINE ===
 type HeroAnimAction =
@@ -2746,12 +2803,21 @@ function drawHeroAttackVfx(
         ctx.strokeStyle = col;
         ctx.lineCap = 'round';
         ctx.lineWidth = h.heroId === 'marrow' ? 9 : 6;
-        ctx.shadowColor = col;
-        ctx.shadowBlur = 14;
+        // soft glow = wide faint stroke underneath (shadowBlur is far too slow per frame)
+        const a0 = Math.min(tail, head);
+        const a1 = Math.max(tail, head);
+        const baseW = ctx.lineWidth;
+        const baseA = ctx.globalAlpha;
+        ctx.globalAlpha = baseA * 0.3;
+        ctx.lineWidth = baseW * 2.6;
         ctx.beginPath();
-        ctx.arc(cos * 4, sin * 4 - 4, r, Math.min(tail, head), Math.max(tail, head));
+        ctx.arc(cos * 4, sin * 4 - 4, r, a0, a1);
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.globalAlpha = baseA;
+        ctx.lineWidth = baseW;
+        ctx.beginPath();
+        ctx.arc(cos * 4, sin * 4 - 4, r, a0, a1);
+        ctx.stroke();
         ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 2.4;
         ctx.beginPath();
@@ -2766,8 +2832,7 @@ function drawHeroAttackVfx(
         ctx.translate(mx, my);
         ctx.rotate(aim);
         ctx.globalAlpha = flash;
-        ctx.shadowColor = accentColor;
-        ctx.shadowBlur = 16;
+        drawGlow(ctx, 8 * size, 0, 22 * size, accentColor, 0.9);
         ctx.fillStyle = accentColor;
         ctx.beginPath();
         ctx.moveTo(-2, 0);
@@ -2776,7 +2841,6 @@ function drawHeroAttackVfx(
         ctx.lineTo(10 * size, 7 * size * flash);
         ctx.closePath();
         ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.fillStyle = '#FFFFFF';
         ctx.beginPath();
         ctx.arc(2, 0, (3 + 4 * flash) * size, 0, Math.PI * 2);
@@ -2819,9 +2883,13 @@ function drawHeroAttackVfx(
       ctx.scale(1, 0.32);
       ctx.globalAlpha = pulse;
       ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 7;
+      ctx.globalAlpha = pulse * 0.3;
+      ctx.beginPath();
+      ctx.arc(0, 0, 30 + pulse * 14, 0, Math.PI * 2);
+      ctx.stroke();
       ctx.lineWidth = 3;
-      ctx.shadowColor = accentColor;
-      ctx.shadowBlur = 12;
+      ctx.globalAlpha = pulse;
       ctx.beginPath();
       ctx.arc(0, 0, 30 + pulse * 14, 0, Math.PI * 2);
       ctx.stroke();
@@ -2832,6 +2900,56 @@ function drawHeroAttackVfx(
     }
     ctx.restore();
   }
+}
+
+const bakedGlowCache = new WeakMap<HTMLCanvasElement, Map<string, { canvas: CanvasImageSource; pad: number }>>();
+
+/**
+ * Draw a soft coloured glow around an image's silhouette, as if drawn with shadowBlur, but the
+ * blur is computed once and cached (per image + colour + blur size). `blur` is in DRAWN pixels.
+ */
+function drawBakedGlow(
+  ctx: CanvasRenderingContext2D,
+  src: HTMLCanvasElement,
+  color: string,
+  blur: number,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number
+): void {
+  const k = dw / src.width; // drawn px per source px
+  const srcBlur = Math.max(1, Math.round(blur / k));
+  const key = `${color}|${srcBlur}`;
+  let perSrc = bakedGlowCache.get(src);
+  if (!perSrc) {
+    perSrc = new Map();
+    bakedGlowCache.set(src, perSrc);
+  }
+  let baked = perSrc.get(key);
+  if (!baked) {
+    const pad = srcBlur * 2;
+    const c = document.createElement('canvas');
+    c.width = src.width + pad * 2;
+    c.height = src.height + pad * 2;
+    const g = c.getContext('2d');
+    if (!g) return;
+    // Draw the image far off-canvas and let only its shadow land in frame => pure glow, no image.
+    const off = c.width + 50;
+    g.shadowColor = color;
+    g.shadowBlur = srcBlur;
+    g.shadowOffsetX = off;
+    g.drawImage(src, pad - off, pad);
+    const entry: { canvas: CanvasImageSource; pad: number } = { canvas: c, pad };
+    baked = entry;
+    perSrc.set(key, entry);
+    // Swap to an ImageBitmap once ready: lives on the GPU, so per-frame draws are cheap.
+    if (typeof createImageBitmap === 'function') {
+      createImageBitmap(c).then((bmp) => (entry.canvas = bmp)).catch(() => undefined);
+    }
+  }
+  const p = baked.pad * k;
+  ctx.drawImage(baked.canvas, dx - p, dy - p, dw + p * 2, dh + p * 2);
 }
 
 export function drawHero(
@@ -3320,14 +3438,19 @@ export function drawHero(
     ctx.translate(lungeX, 0);
     // Shear pivots at the feet (y = 0): upper body leans, boots stay planted on the ground
     if (bodyLean !== 0) ctx.transform(1, 0, -bodyLean, 1, 0, 0);
-    if (anim.castTimer > 0) {
-      // Charge glow in the hero's accent colour while casting
-      const glow = Math.sin(castProgress(anim) * Math.PI);
-      ctx.shadowColor = def.accentColor;
-      ctx.shadowBlur = 10 + 18 * glow;
-    } else {
-      ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
-      ctx.shadowBlur = h.isPlayer ? 12 : 9;
+    // Team-colour outline glow (and accent charge glow while casting). Pre-blurred once per
+    // sprite+colour and drawn as ONE image behind the rig — live shadowBlur on every limb was the
+    // single biggest frame-time cost in busy fights.
+    {
+      const outline = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
+      drawBakedGlow(ctx, sprite.canvas, outline, h.isPlayer ? 12 : 9, -drawW / 2, -spriteH, drawW, spriteH);
+      if (anim.castTimer > 0) {
+        const glow = Math.sin(castProgress(anim) * Math.PI);
+        const prevA = ctx.globalAlpha;
+        ctx.globalAlpha = prevA * glow;
+        drawBakedGlow(ctx, sprite.canvas, def.accentColor, 24, -drawW / 2, -spriteH, drawW, spriteH);
+        ctx.globalAlpha = prevA;
+      }
     }
 
     const rig = sprite.rig;
