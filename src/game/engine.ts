@@ -16,6 +16,7 @@ import type {
   WorldSnapshot,
 } from './netTypes';
 import { renderArena, type EndCinematicRenderState } from './renderer';
+import { heroAbilityVfx } from './heroVfx';
 import { ArenaSimulation } from './sim';
 import type {
   CoreDrillEntity,
@@ -48,6 +49,9 @@ export interface EngineLaunchConfig {
   preferredTeam?: Team;
 }
 
+/** Max pixels the canvas draws at full quality; bigger windows are upscaled by the browser. */
+const MAX_RENDER_PIXELS = 1920 * 1080 * 0.8;
+
 export class GameEngine {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -55,6 +59,24 @@ export class GameEngine {
   private onReturnToLobby?: (roomId: string, reason: string) => void;
   private rafId: number | null = null;
   private lastTs = 0;
+
+  // --- Dynamic resolution (keeps busy fights at 60fps on slower / software-rendered machines) ---
+  /** Fraction of the static-capped resolution actually rendered. 1 = full sharpness. */
+  private dynScale = 1;
+  private perfTime = 0;
+  private perfFrames = 0;
+  private perfCooldown = 0;
+  /** Seconds until we are allowed to try sharpening again (grows after each failed attempt). */
+  private sharpenBlockedFor = 0;
+  private sharpenBackoff = 8;
+  /** Seconds left in which a drop counts as "the last sharpen step failed". */
+  private sharpenTrial = 0;
+  /** ?scale=0.75 forces a fixed render scale (dynamic resolution off); ?scale=1 forces full res. */
+  private readonly forcedScale: number | null = (() => {
+    if (typeof location === 'undefined') return null;
+    const v = Number(new URLSearchParams(location.search).get('scale'));
+    return v > 0 && v <= 1 ? v : null;
+  })();
   private hudEmitTimer = 0;
 
   private mode: MatchMode;
@@ -174,8 +196,8 @@ export class GameEngine {
     this.endCinematic = null;
     this.particles = [];
     this.floatingTexts = [];
-    this.camX = Math.max(0, p.dropPodX - this.canvas.width * 0.5);
-    this.camY = Math.max(0, Math.min(WORLD_H - this.canvas.height, 260));
+    this.camX = Math.max(0, p.dropPodX - this.viewW * 0.5);
+    this.camY = Math.max(0, Math.min(WORLD_H - this.viewH, 260));
     gameAudio.setMusicMode('battle');
   }
 
@@ -247,8 +269,8 @@ export class GameEngine {
         this.applyServerSnapshot(msg.snapshot, true);
         const me = this.mirrorHeroes.get(this.playerEntityId);
         if (me) {
-          this.camX = Math.max(0, me.x - this.canvas.width * 0.5);
-          this.camY = Math.max(0, Math.min(WORLD_H - this.canvas.height, 260));
+          this.camX = Math.max(0, me.x - this.viewW * 0.5);
+          this.camY = Math.max(0, Math.min(WORLD_H - this.viewH, 260));
         }
         if (this.phase === 'PLAYING') {
           gameAudio.setMusicMode('battle');
@@ -308,6 +330,7 @@ export class GameEngine {
     const tick = (ts: number) => {
       const rawDt = (ts - this.lastTs) / 1000;
       this.lastTs = ts;
+      this.updateRenderResolution(rawDt);
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
       if (this.phase === 'VICTORY' || this.phase === 'DEFEAT') {
@@ -628,8 +651,8 @@ export class GameEngine {
     this.renderTime += dt * 0.68;
 
     // Smooth cinematic camera glide onto the shattered Ancient Core
-    const vw = this.canvas.width;
-    const vh = this.canvas.height;
+    const vw = this.viewW;
+    const vh = this.viewH;
     const targetX = Math.max(0, Math.min(Math.max(0, WORLD_W - vw), cin.coreX - vw * 0.5));
     const targetY = Math.max(0, Math.min(Math.max(0, WORLD_H - vh), cin.coreY - 125 - vh * 0.5));
     const camLerp = Math.min(1, dt * 3.4);
@@ -1395,6 +1418,7 @@ export class GameEngine {
         }
       } else if (ev.kind === 'ability') {
         const mine = ev.ownerId === this.playerEntityId;
+        heroAbilityVfx(ev.tag, ev.x, ev.y, this.getHeroById(ev.ownerId));
         const vol = distVol(ev.x, ev.y, mine, 820);
         if (ev.tag === 'hook') {
           this.spawnParticles(ev.x, ev.y, '#94A3B8', 8, 150, 'spark');
@@ -1566,6 +1590,73 @@ export class GameEngine {
     this.queuedRecall = false;
   }
 
+  /**
+   * Sizes the canvas backing store: static cap (~1.6 MP) x dynamic scale. Every second, if the
+   * game averaged under ~55fps the resolution drops a step (down to 55%); after a quiet period at
+   * a solid 60 it tries one step sharper, backing off longer each time that fails. The visible
+   * world area never changes — only how many pixels are drawn to show it.
+   */
+  private updateRenderResolution(rawDt: number): void {
+    const cw = this.canvas.clientWidth;
+    const ch = this.canvas.clientHeight;
+    if (!cw || !ch) return;
+
+    if (this.forcedScale === null && rawDt > 0 && rawDt < 0.25) {
+      this.perfTime += rawDt;
+      this.perfFrames += 1;
+      this.sharpenBlockedFor = Math.max(0, this.sharpenBlockedFor - rawDt);
+      this.sharpenTrial = Math.max(0, this.sharpenTrial - rawDt);
+      if (this.perfTime >= 1) {
+        const fps = this.perfFrames / this.perfTime;
+        this.perfTime = 0;
+        this.perfFrames = 0;
+        if (this.perfCooldown > 0) {
+          this.perfCooldown -= 1; // let the new resolution settle before judging it
+        } else if (fps < 55 && this.dynScale > 0.55) {
+          const sharpenFailed = this.sharpenTrial > 0;
+          this.sharpenTrial = 0;
+          this.dynScale = Math.max(0.55, Math.round((this.dynScale - 0.1) * 100) / 100);
+          this.perfCooldown = 1;
+          // Couldn't hold 60 here: wait longer before trying to sharpen again
+          this.sharpenBlockedFor = this.sharpenBackoff;
+          if (sharpenFailed) this.sharpenBackoff = Math.min(120, this.sharpenBackoff * 2);
+        } else if (fps >= 58.5 && this.dynScale < 1 && this.sharpenBlockedFor <= 0) {
+          this.dynScale = Math.min(1, Math.round((this.dynScale + 0.1) * 100) / 100);
+          this.perfCooldown = 1;
+          this.sharpenBlockedFor = 3;
+          this.sharpenTrial = 5;
+        }
+      }
+    }
+
+    const staticCap = Math.min(1, Math.sqrt(MAX_RENDER_PIXELS / (cw * ch)));
+    const scale = staticCap * (this.forcedScale ?? this.dynScale);
+    const w = Math.max(1, Math.round(cw * scale));
+    const h = Math.max(1, Math.round(ch * scale));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+  }
+
+  /** Current render scale (backing px per CSS px), for debugging / a future graphics menu. */
+  public getRenderScale(): number {
+    return this.canvas.width / this.viewW;
+  }
+
+  /** Visible area in CSS pixels. The canvas backing store may be smaller (see App.tsx resize). */
+  private get viewW(): number {
+    return this.canvas.clientWidth || this.canvas.width;
+  }
+  private get viewH(): number {
+    return this.canvas.clientHeight || this.canvas.height;
+  }
+
+  private getHeroById(id: string): HeroEntity | undefined {
+    if (this.mode === 'solo' && this.localSim) return this.localSim.heroes.find((h) => h.id === id);
+    return this.mirrorHeroes.get(id);
+  }
+
   private getLocalPlayerHero(): HeroEntity | undefined {
     if (this.mode === 'solo' && this.localSim) {
       return this.localSim.heroes.find((h) => h.id === this.playerEntityId);
@@ -1663,8 +1754,8 @@ export class GameEngine {
   }
 
   private updateCamera(player: HeroEntity, dt: number): void {
-    const vw = this.canvas.width;
-    const vh = this.canvas.height;
+    const vw = this.viewW;
+    const vh = this.viewH;
     const lookAheadX = player.alive && !player.inDropPod ? Math.cos(player.aimAngle) * 78 : 0;
     const targetX = player.x + lookAheadX - vw * 0.5;
     const targetY = player.y - vh * 0.52;
@@ -1689,7 +1780,9 @@ export class GameEngine {
     const hooks = this.mode === 'solo' && this.localSim ? this.localSim.hooks : Array.from(this.mirrorHooks.values());
     const hazards = this.mode === 'solo' && this.localSim ? this.localSim.hazards : Array.from(this.mirrorHazards.values());
 
-    renderArena(this.ctx, this.canvas.width, this.canvas.height, {
+    const renderScale = this.canvas.width / this.viewW;
+    this.ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    renderArena(this.ctx, this.viewW, this.viewH, {
       time: this.renderTime,
       localTeam: this.playerTeam,
       camX: this.camX,
