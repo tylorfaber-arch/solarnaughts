@@ -54,7 +54,9 @@ export function drawGlow(ctx: CanvasRenderingContext2D, x: number, y: number, r:
 }
 
 // ---------- Particles ----------
-type VfxKind = 'ember' | 'smoke' | 'spark' | 'flash' | 'shock' | 'wisp' | 'drip' | 'rune';
+export type VfxKind =
+  | 'ember' | 'smoke' | 'spark' | 'flash' | 'shock' | 'wisp' | 'drip' | 'rune'
+  | 'shard' | 'feather' | 'bubble' | 'pillar' | 'bolt';
 
 interface VfxParticle {
   kind: VfxKind;
@@ -69,12 +71,15 @@ interface VfxParticle {
   grav: number;
   drag: number;
   spin: number;
+  /** second point for 'bolt' (lightning end) */
+  tx: number;
+  ty: number;
 }
 
-const MAX_PARTICLES = 700;
+const MAX_PARTICLES = 900;
 const particles: VfxParticle[] = [];
 
-function emit(p: Partial<VfxParticle> & { kind: VfxKind; x: number; y: number; color: string }): void {
+export function emit(p: Partial<VfxParticle> & { kind: VfxKind; x: number; y: number; color: string }): void {
   if (particles.length >= MAX_PARTICLES) return;
   const life = p.life ?? 0.4;
   particles.push({
@@ -84,13 +89,25 @@ function emit(p: Partial<VfxParticle> & { kind: VfxKind; x: number; y: number; c
     grav: 0,
     drag: 0,
     spin: 0,
+    tx: p.x,
+    ty: p.y,
     ...p,
     life,
     max: life,
   });
 }
 
-const rand = (a: number, b: number) => a + Math.random() * (b - a);
+export const rand = (a: number, b: number) => a + Math.random() * (b - a);
+
+/** Seconds elapsed this render frame (for rate-based emitters elsewhere). */
+export function vfxDt(): number {
+  return dt;
+}
+
+/** True with probability rate*dt — emit ~`rate` particles per second regardless of frame rate. */
+export function chance(rate: number): boolean {
+  return Math.random() < rate * dt;
+}
 
 // ---------- Projectile style table ----------
 interface ProjStyle {
@@ -99,15 +116,28 @@ interface ProjStyle {
   length: number; // number of trail samples kept
   glow: number; // glow radius around the projectile
   impact: 'spark' | 'blast' | 'toxic' | 'holy' | 'void' | 'slash';
-  emit?: 'embers' | 'smoke' | 'drip' | 'wisp' | 'sparkle';
+  emit?: 'embers' | 'smoke' | 'drip' | 'wisp' | 'sparkle' | 'feather' | 'fuse' | 'shard' | 'afterimage';
 }
 
-function styleFor(p: ProjectileEntity): ProjStyle {
+function styleFor(p: ProjectileEntity, ownerHero?: string): ProjStyle {
+  // Shared projectile kinds get a per-hero look
+  if (p.kind === 'revolver' && ownerHero === 'seraph')
+    return { trail: '#FDE68A', width: 5, length: 10, glow: 18, impact: 'holy', emit: 'feather' };
+  if (p.kind === 'revolver' && ownerHero === 'vexia')
+    return { trail: '#F43F5E', width: 3.5, length: 16, glow: 14, impact: 'spark', emit: 'sparkle' };
+  if (p.kind === 'dynamite')
+    return { trail: '#F97316', width: 4, length: 8, glow: 16, impact: 'blast', emit: 'fuse' };
+  if (p.kind === 'biobeam')
+    return { trail: '#4ADE80', width: 7, length: 9, glow: 22, impact: 'void', emit: 'wisp' };
+  if (p.kind === 'sonic')
+    return { trail: '#A855F7', width: 5, length: 9, glow: 18, impact: 'void', emit: 'shard' };
+  if (p.kind === 'dagger')
+    return { trail: '#67E8F9', width: 4, length: 9, glow: 14, impact: 'slash', emit: 'afterimage' };
+  if (p.kind === 'cleaver')
+    return { trail: '#34D399', width: 10, length: 6, glow: 26, impact: 'slash', emit: 'drip' };
+  if (p.kind === 'mortar')
+    return { trail: '#FB923C', width: 8, length: 16, glow: 28, impact: 'blast', emit: 'smoke' };
   switch (p.kind) {
-    case 'cleaver':
-      return { trail: '#34D399', width: 10, length: 6, glow: 26, impact: 'slash' };
-    case 'dagger':
-      return { trail: '#38BDF8', width: 4, length: 7, glow: 14, impact: 'slash' };
     case 'spear':
       return { trail: '#FBBF24', width: 6, length: 12, glow: 20, impact: 'holy', emit: 'sparkle' };
     case 'prism_lance':
@@ -121,14 +151,9 @@ function styleFor(p: ProjectileEntity): ProjStyle {
     case 'soul_orb':
     case 'singularity_orb':
       return { trail: p.color || '#2DD4BF', width: p.radius * 1.6, length: 12, glow: p.radius * 3.2, impact: 'void', emit: 'wisp' };
-    case 'mortar':
     case 'missile':
     case 'drone_kamikaze':
-    case 'dynamite':
       return { trail: '#F97316', width: 7, length: 14, glow: 26, impact: 'blast', emit: 'smoke' };
-    case 'sonic':
-    case 'biobeam':
-      return { trail: p.color || '#A855F7', width: 7, length: 8, glow: 22, impact: 'void' };
     default:
       return { trail: p.color || '#E2E8F0', width: Math.max(3, p.radius * 1.1), length: 8, glow: Math.max(12, p.radius * 2.6), impact: 'spark' };
   }
@@ -181,10 +206,10 @@ export function vfxBeginFrame(time: number): void {
 }
 
 /** Record a projectile's position this frame and emit its in-flight particles. */
-export function vfxTrackProjectile(p: ProjectileEntity): void {
+export function vfxTrackProjectile(p: ProjectileEntity, ownerHero?: string): void {
   let tr = tracks.get(p.id);
   if (!tr) {
-    tr = { pts: [], style: styleFor(p), seenFrame: frame, emitAcc: 0, team: p.team };
+    tr = { pts: [], style: styleFor(p, ownerHero), seenFrame: frame, emitAcc: 0, team: p.team };
     tracks.set(p.id, tr);
   }
   tr.seenFrame = frame;
@@ -210,6 +235,18 @@ export function vfxTrackProjectile(p: ProjectileEntity): void {
         break;
       case 'wisp':
         emit({ kind: 'wisp', x: p.x + rand(-4, 4), y: p.y + rand(-4, 4), vx: Math.cos(back) * 40 + rand(-25, 25), vy: Math.sin(back) * 40 + rand(-25, 25), size: rand(3, 6), life: rand(0.3, 0.55), color: st.trail, drag: 3, spin: rand(-6, 6) });
+        break;
+      case 'feather':
+        if (Math.random() < 0.35) emit({ kind: 'feather', x: p.x, y: p.y, vx: rand(-30, 30), vy: rand(-20, 10), size: rand(2.5, 4), life: rand(0.4, 0.7), color: '#FEF3C7', grav: 40, drag: 2, spin: rand(-5, 5) });
+        break;
+      case 'fuse':
+        emit({ kind: 'spark', x: p.x, y: p.y - 4, vx: rand(-90, 90), vy: rand(-140, -20), size: rand(1.2, 2), life: rand(0.12, 0.25), color: Math.random() < 0.5 ? '#FDE047' : '#FFFFFF', grav: 400 });
+        break;
+      case 'shard':
+        if (Math.random() < 0.5) emit({ kind: 'shard', x: p.x, y: p.y, vx: Math.cos(back) * 50 + rand(-30, 30), vy: Math.sin(back) * 50 + rand(-30, 30), size: rand(2.5, 4.5), life: rand(0.2, 0.4), color: '#C084FC', drag: 3, spin: rand(-12, 12) });
+        break;
+      case 'afterimage':
+        if (Math.random() < 0.6) emit({ kind: 'shard', x: p.x, y: p.y, vx: 0, vy: 0, size: 3.5, life: 0.14, color: '#22D3EE', spin: 0 });
         break;
       case 'sparkle':
         if (Math.random() < 0.55) emit({ kind: 'spark', x: p.x, y: p.y, vx: rand(-50, 50), vy: rand(-50, 50), size: rand(1.5, 2.5), life: rand(0.15, 0.3), color: '#FFFFFF', drag: 4 });
@@ -381,6 +418,93 @@ export function vfxDrawParticles(ctx: CanvasRenderingContext2D): void {
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03);
+        ctx.stroke();
+        break;
+      }
+      case 'shard': {
+        ctx.globalAlpha = t;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((1 - t) * p.spin);
+        const r = p.size;
+        ctx.beginPath();
+        ctx.moveTo(0, -r * 1.6);
+        ctx.lineTo(r * 0.6, 0);
+        ctx.lineTo(0, r * 1.6);
+        ctx.lineTo(-r * 0.6, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'feather': {
+        ctx.globalAlpha = t * 0.9;
+        ctx.fillStyle = p.color;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(Math.sin((1 - t) * p.spin) * 0.8);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, p.size * 0.45, p.size * 1.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        break;
+      }
+      case 'bubble': {
+        ctx.globalAlpha = t * 0.85;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1.3 - t * 0.3), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = t * 0.6;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(p.x - p.size * 0.35, p.y - p.size * 0.35, p.size * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      case 'pillar': {
+        // Vertical light column standing on (x, y); size = width, spin = height
+        const a = t < 0.85 ? 1 : (1 - t) / 0.15;
+        const fade = Math.min(a, t * 1.6);
+        const w = p.size * (0.5 + t * 0.5);
+        const hgt = p.spin;
+        const grad = ctx.createLinearGradient(p.x - w, 0, p.x + w, 0);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(0.35, p.color);
+        grad.addColorStop(0.5, '#FFFFFF');
+        grad.addColorStop(0.65, p.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.globalAlpha = fade;
+        ctx.fillStyle = grad;
+        ctx.fillRect(p.x - w, p.y - hgt, w * 2, hgt);
+        ctx.drawImage(getGlow(p.color), p.x - w * 2.5, p.y - w * 1.2, w * 5, w * 2.4);
+        break;
+      }
+      case 'bolt': {
+        // Jagged lightning from (x, y) to (tx, ty), re-jittered every frame
+        ctx.globalAlpha = t;
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = p.size;
+        ctx.lineJoin = 'round';
+        const segs = 7;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        const dx = p.tx - p.x;
+        const dy = p.ty - p.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        for (let k = 1; k < segs; k++) {
+          const f = k / segs;
+          const off = rand(-1, 1) * len * 0.09;
+          ctx.lineTo(p.x + dx * f + nx * off, p.y + dy * f + ny * off);
+        }
+        ctx.lineTo(p.tx, p.ty);
+        ctx.stroke();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = Math.max(1, p.size * 0.4);
         ctx.stroke();
         break;
       }

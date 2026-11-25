@@ -1,7 +1,8 @@
 import { HERO_MAP } from './heroes';
 import { BASE_ZONES, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
 import { ensureArenaArtLoaded, type ArenaArtAssets, type ProcessedSprite } from './sprites';
-import { drawGlow, vfxBeginFrame, vfxCastBurst, vfxDrawParticles, vfxDrawTrails, vfxMuzzle, vfxTrackProjectile } from './vfx';
+import { drawGlow, vfxBeginFrame, vfxCastBurst, vfxDrawParticles, vfxDrawTrails, vfxTrackProjectile } from './vfx';
+import { hazardVfx, heroAuraVfx, heroMuzzle, heroSlash, hookVfx, summonVfx } from './heroVfx';
 import type {
   CoreDrillEntity,
   DroidEntity,
@@ -163,7 +164,9 @@ export function renderArena(
   // 13. Ground Hazards & Totem Auras
   for (const hz of state.hazards) {
     drawHazardZone(ctx, hz, state.time);
+    hazardVfx(hz, state.time);
   }
+  for (const s of state.summons) summonVfx(s);
   for (const s of state.summons) {
     if (s.kind === 'totem') drawSummon(ctx, s, state.time);
   }
@@ -177,7 +180,9 @@ export function renderArena(
   // 15. Active Abyssal Chain Hooks
   for (const hk of state.hooks) {
     drawChainHook(ctx, hk, state.time);
+    hookVfx(hk);
   }
+  for (const h of state.heroes) heroAuraVfx(h, state.time);
 
   // 16. Champions (alive or descending in drop pods)
   for (const h of state.heroes) {
@@ -194,7 +199,9 @@ export function renderArena(
   }
 
   // 18. Projectiles
-  for (const proj of state.projectiles) vfxTrackProjectile(proj);
+  const ownerHero = new Map<string, string>();
+  for (const h of state.heroes) ownerHero.set(h.id, h.heroId);
+  for (const proj of state.projectiles) vfxTrackProjectile(proj, ownerHero.get(proj.ownerId));
   vfxDrawTrails(ctx);
   for (const proj of state.projectiles) {
     drawProjectile(ctx, proj, state.time);
@@ -2496,14 +2503,10 @@ function updateHeroAnimState(
     st.attackTimer = st.attackDur;
     st.attackSwingSign = st.attackSwingSign === 1 ? -1 : 1;
     const style = HERO_ATTACK_STYLE[h.heroId] ?? 'ranged';
-    if (style !== 'melee') {
-      vfxMuzzle(
-        h.x + Math.cos(h.aimAngle) * 26,
-        h.y + Math.sin(h.aimAngle) * 20 - 2,
-        h.aimAngle,
-        HERO_MAP[h.heroId]?.accentColor ?? '#FFFFFF',
-        style === 'heavy'
-      );
+    if (style === 'melee') {
+      heroSlash(h.heroId, h.x, h.y, h.aimAngle);
+    } else {
+      heroMuzzle(h.heroId, h.x + Math.cos(h.aimAngle) * 26, h.y + Math.sin(h.aimAngle) * 20 - 2, h.aimAngle);
     }
   }
   st.prevRecoil = h.recoilTimer;

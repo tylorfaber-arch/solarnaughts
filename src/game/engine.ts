@@ -16,6 +16,7 @@ import type {
   WorldSnapshot,
 } from './netTypes';
 import { renderArena, type EndCinematicRenderState } from './renderer';
+import { heroAbilityVfx } from './heroVfx';
 import { ArenaSimulation } from './sim';
 import type {
   CoreDrillEntity,
@@ -1395,6 +1396,7 @@ export class GameEngine {
         }
       } else if (ev.kind === 'ability') {
         const mine = ev.ownerId === this.playerEntityId;
+        heroAbilityVfx(ev.tag, ev.x, ev.y, this.getHeroById(ev.ownerId));
         const vol = distVol(ev.x, ev.y, mine, 820);
         if (ev.tag === 'hook') {
           this.spawnParticles(ev.x, ev.y, '#94A3B8', 8, 150, 'spark');
@@ -1564,6 +1566,11 @@ export class GameEngine {
     this.queuedSkill1 = false;
     this.queuedSkill2 = false;
     this.queuedRecall = false;
+  }
+
+  private getHeroById(id: string): HeroEntity | undefined {
+    if (this.mode === 'solo' && this.localSim) return this.localSim.heroes.find((h) => h.id === id);
+    return this.mirrorHeroes.get(id);
   }
 
   private getLocalPlayerHero(): HeroEntity | undefined {
