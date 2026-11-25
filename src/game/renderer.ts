@@ -1,6 +1,7 @@
 import { HERO_MAP } from './heroes';
 import { BASE_ZONES, JUMP_PADS, PLATFORMS, WORLD_H, WORLD_W } from './map';
 import { ensureArenaArtLoaded, type ArenaArtAssets, type ProcessedSprite } from './sprites';
+import { drawGlow, vfxBeginFrame, vfxCastBurst, vfxDrawParticles, vfxDrawTrails, vfxMuzzle, vfxTrackProjectile } from './vfx';
 import type {
   CoreDrillEntity,
   DroidEntity,
@@ -83,6 +84,7 @@ export function renderArena(
   state: RenderState
 ): void {
   const art = ensureArenaArtLoaded(ctx);
+  vfxBeginFrame(state.time);
   ctx.save();
 
   const camX = state.camX + state.shakeX;
@@ -192,6 +194,8 @@ export function renderArena(
   }
 
   // 18. Projectiles
+  for (const proj of state.projectiles) vfxTrackProjectile(proj);
+  vfxDrawTrails(ctx);
   for (const proj of state.projectiles) {
     drawProjectile(ctx, proj, state.time);
   }
@@ -230,6 +234,9 @@ export function renderArena(
     }
     ctx.restore();
   }
+
+  // 20b. Additive light VFX (impacts, muzzle flashes, cast flares, embers, smoke)
+  vfxDrawParticles(ctx);
 
   // 21. Floating Combat Numbers
   for (const ft of state.floatingTexts) {
@@ -2415,8 +2422,11 @@ interface HeroAnimState {
   prevRecoil: number;
   landTimer: number;
   attackTimer: number;
+  attackDur: number;
+  lastShotAt: number;
   attackSwingSign: 1 | -1;
   castTimer: number;
+  castDur: number;
   castSlot: 1 | 2;
   hurtTimer: number;
   action: HeroAnimAction;
@@ -2440,8 +2450,11 @@ function updateHeroAnimState(
       prevRecoil: h.recoilTimer,
       landTimer: 0,
       attackTimer: 0,
+      attackDur: 0.26,
+      lastShotAt: -10,
       attackSwingSign: 1,
       castTimer: 0,
+      castDur: 0.34,
       castSlot: 1,
       hurtTimer: 0,
       action: 'idle',
@@ -2458,21 +2471,40 @@ function updateHeroAnimState(
   }
   st.prevGrounded = h.grounded;
 
-  // Detect Skill 1 / Skill 2 cast spikes
+  // Detect Skill 1 / Skill 2 casts (cooldown only ever jumps UP when a skill is used)
   if (h.skill1Cd > st.prevSkill1Cd + 0.25) {
-    st.castTimer = 0.34;
+    st.castDur = 0.34;
+    st.castTimer = st.castDur;
     st.castSlot = 1;
+    vfxCastBurst(h.x, h.y - 6, HERO_MAP[h.heroId]?.accentColor ?? '#FFFFFF', 1);
   } else if (h.skill2Cd > st.prevSkill2Cd + 0.25) {
-    st.castTimer = 0.36;
+    st.castDur = 0.38;
+    st.castTimer = st.castDur;
     st.castSlot = 2;
+    vfxCastBurst(h.x, h.y - 6, HERO_MAP[h.heroId]?.accentColor ?? '#FFFFFF', 2);
   }
   st.prevSkill1Cd = h.skill1Cd;
   st.prevSkill2Cd = h.skill2Cd;
 
-  // Detect primary attack trigger (alternate swing sign for juicy Awesomenauts 1-2 combos!)
-  if (h.recoilTimer > st.prevRecoil + 0.025) {
-    st.attackTimer = 0.26;
+  // Detect primary attack: recoilTimer only ever rises when a shot fires, so any rise is a new shot.
+  // The animation length adapts to fire rate so rapid-fire heroes complete a full (shorter) cycle per
+  // shot instead of restarting mid-swing every frame-ish, which is what made sustained fire jitter.
+  if (h.recoilTimer > st.prevRecoil + 0.001) {
+    const interval = time - st.lastShotAt;
+    st.lastShotAt = time;
+    st.attackDur = Math.max(0.12, Math.min(0.26, interval * 0.92));
+    st.attackTimer = st.attackDur;
     st.attackSwingSign = st.attackSwingSign === 1 ? -1 : 1;
+    const style = HERO_ATTACK_STYLE[h.heroId] ?? 'ranged';
+    if (style !== 'melee') {
+      vfxMuzzle(
+        h.x + Math.cos(h.aimAngle) * 26,
+        h.y + Math.sin(h.aimAngle) * 20 - 2,
+        h.aimAngle,
+        HERO_MAP[h.heroId]?.accentColor ?? '#FFFFFF',
+        style === 'heavy'
+      );
+    }
   }
   st.prevRecoil = h.recoilTimer;
 
@@ -2648,253 +2680,158 @@ function drawHeroAnimatedBackpiece(
   }
 }
 
+type AttackStyle = 'melee' | 'ranged' | 'heavy' | 'caster';
+const HERO_ATTACK_STYLE: Record<HeroEntity['heroId'], AttackStyle> = {
+  marrow: 'melee',
+  xylar: 'melee',
+  bastion: 'heavy',
+  korak: 'caster',
+  caldris: 'caster',
+  seraph: 'ranged',
+  vorg: 'ranged',
+  vexia: 'ranged',
+  vespra: 'ranged',
+  vale: 'ranged',
+};
+
+/** Normalised 0..1 attack / cast progress using the duration the trigger actually set. */
+function attackProgress(anim: HeroAnimState): number {
+  return anim.attackTimer > 0 ? 1 - anim.attackTimer / anim.attackDur : 0;
+}
+function castProgress(anim: HeroAnimState): number {
+  return anim.castTimer > 0 ? 1 - anim.castTimer / anim.castDur : 0;
+}
+
 /**
- * Draws a crisp 360°-aimed Awesomenauts foreground weapon & attack animation overlay
- * (swing arcs, recoil kicks, cast surges, victory raises) tailored to each of the 10 champions.
+ * Attack / cast VFX drawn over the hero. The painted sprite already holds its weapon, so this
+ * draws only energy effects (slash crescents, muzzle flashes, cast glyphs) — never a second weapon.
+ * Origin is the hero centre (h.x, h.y); effects sit where sim.ts spawns projectiles (cos*22, sin*18-2).
  */
-function drawHeroAnimatedWeaponRig(
+function drawHeroAttackVfx(
   ctx: CanvasRenderingContext2D,
   h: HeroEntity,
   anim: HeroAnimState,
   time: number,
-  accentColor: string,
-  spriteH: number
+  accentColor: string
 ): void {
-  const isVictory = anim.action === 'victory';
-  const isDefeat = anim.action === 'defeat';
-  const atkProgress = anim.attackTimer > 0 ? 1 - anim.attackTimer / 0.26 : 0; // 0 -> 1
-  const castProgress = anim.castTimer > 0 ? 1 - anim.castTimer / 0.34 : 0;
+  if (anim.action === 'victory' || anim.action === 'defeat') return;
+  const style = HERO_ATTACK_STYLE[h.heroId] ?? 'ranged';
+  const aim = h.aimAngle;
+  const cos = Math.cos(aim);
+  const sin = Math.sin(aim);
+  const mx = cos * 26;
+  const my = sin * 20 - 2;
 
-  // Compute local aim angle in hero-facing space (clamped cleanly so weapon never bends backward awkwardly)
-  let aim = h.aimAngle;
-  if (isVictory) {
-    aim = h.facing === 1 ? -1.12 + Math.sin(time * 9) * 0.14 : Math.PI + 1.12 - Math.sin(time * 9) * 0.14;
-  } else if (isDefeat) {
-    aim = h.facing === 1 ? 0.65 : Math.PI - 0.65;
-  }
-
-  // Awesomenauts 3-stage attack curve: wind-up (0..0.22) -> snap strike (0.22..0.58) -> follow-through (0.58..1)
-  let swingAngle = 0;
-  let thrustOffset = 0;
   if (anim.attackTimer > 0) {
-    if (atkProgress < 0.22) {
-      const p = atkProgress / 0.22;
-      swingAngle = -0.68 * anim.attackSwingSign * p;
-      thrustOffset = -5 * p;
-    } else if (atkProgress < 0.58) {
-      const p = (atkProgress - 0.22) / 0.36;
-      const ease = 1 - Math.pow(1 - p, 3);
-      swingAngle = (-0.68 + 1.65 * ease) * anim.attackSwingSign;
-      thrustOffset = -5 + 17 * ease;
-    } else {
-      const p = (atkProgress - 0.58) / 0.42;
-      swingAngle = 0.97 * anim.attackSwingSign * (1 - p);
-      thrustOffset = 12 * (1 - p);
-    }
-  } else if (anim.castTimer > 0) {
-    const pulse = Math.sin(castProgress * Math.PI);
-    swingAngle = -0.35 * pulse * h.facing;
-    thrustOffset = 10 * pulse;
-  } else {
-    // Subtle breathing / running weapon bob
-    const moveFactor = Math.min(1, Math.abs(h.vx) / 220);
-    swingAngle = Math.sin(h.walkCycle * 2.1) * 0.12 * moveFactor + Math.sin(time * 3.1) * 0.03;
-    thrustOffset = Math.cos(h.walkCycle * 2.1) * 2.5 * moveFactor;
-  }
-
-  const shoulderY = -spriteH * 0.48 + (isDefeat ? 10 : 0);
-  const facingLeft = Math.cos(aim) < 0;
-
-  ctx.save();
-  ctx.translate(0, shoulderY);
-  ctx.rotate(aim + swingAngle);
-  if (facingLeft) ctx.scale(1, -1);
-  ctx.translate(10 + thrustOffset, 0);
-
-  // Crisp inked foreground weapon silhouette per champion
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.2;
-  ctx.lineJoin = 'round';
-
-  switch (h.heroId) {
-    case 'marrow': {
-      // Heavy Butcher Cleaver / Abyssal Hook Blade
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(-4, -3, 18, 6);
-      ctx.strokeRect(-4, -3, 18, 6);
-      ctx.fillStyle = '#94A3B8';
-      ctx.beginPath();
-      ctx.moveTo(10, -10);
-      ctx.lineTo(30, -7);
-      ctx.lineTo(28, 7);
-      ctx.lineTo(10, 5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#34D399';
-      ctx.fillRect(14, -7, 13, 3);
-      break;
-    }
-    case 'seraph': {
-      // Radiant Hard-Light Seraph Glaive
-      ctx.fillStyle = '#D97706';
-      ctx.fillRect(-8, -2.5, 30, 5);
-      ctx.strokeRect(-8, -2.5, 30, 5);
-      ctx.fillStyle = '#38BDF8';
-      ctx.beginPath();
-      ctx.moveTo(20, -7);
-      ctx.lineTo(38, 0);
-      ctx.lineTo(20, 7);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'korak': {
-      // Gnarled Occult Skull Staff
-      ctx.fillStyle = '#475569';
-      ctx.fillRect(-6, -2.5, 28, 5);
-      ctx.strokeRect(-6, -2.5, 28, 5);
-      ctx.fillStyle = '#34D399';
-      ctx.beginPath();
-      ctx.arc(25, 0, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'vorg': {
-      // Eldritch Twin Void Claws
-      ctx.fillStyle = '#A855F7';
-      for (const cy of [-6, 0, 6]) {
+    const p = attackProgress(anim);
+    ctx.save();
+    if (style === 'melee') {
+      // Sweeping crescent: the arc's leading edge travels across the swing, tail fades behind it
+      const strike = Math.max(0, Math.min(1, (p - 0.15) / 0.45));
+      if (strike > 0 && p < 0.85) {
+        const ease = 1 - Math.pow(1 - strike, 3);
+        const span = 2.2;
+        const dir = anim.attackSwingSign * (Math.cos(aim) < 0 ? -1 : 1);
+        const start = aim - (span / 2) * dir;
+        const head = start + span * ease * dir;
+        const tail = start + span * Math.max(0, ease - 0.55) * dir;
+        const r = h.heroId === 'marrow' ? 44 : 34;
+        const fade = p < 0.6 ? 1 : 1 - (p - 0.6) / 0.25;
+        const col =
+          h.heroId === 'marrow' ? '#34D399' : h.cloakCritReady ? '#FDE047' : '#38BDF8';
+        ctx.globalAlpha = 0.9 * fade;
+        ctx.strokeStyle = col;
+        ctx.lineCap = 'round';
+        ctx.lineWidth = h.heroId === 'marrow' ? 9 : 6;
+        ctx.shadowColor = col;
+        ctx.shadowBlur = 14;
         ctx.beginPath();
-        ctx.moveTo(8, cy - 2);
-        ctx.lineTo(28, cy);
-        ctx.lineTo(8, cy + 2);
-        ctx.closePath();
-        ctx.fill();
+        ctx.arc(cos * 4, sin * 4 - 4, r, Math.min(tail, head), Math.max(tail, head));
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(cos * 4, sin * 4 - 4, r - 3, Math.min(tail, head), Math.max(tail, head));
         ctx.stroke();
       }
-      break;
-    }
-    case 'bastion': {
-      // Sanctum Siege Mortar Cannon
-      ctx.fillStyle = '#334155';
-      ctx.fillRect(0, -7, 26, 14);
-      ctx.strokeRect(0, -7, 26, 14);
-      ctx.fillStyle = '#F59E0B';
-      ctx.fillRect(18, -8.5, 9, 17);
-      ctx.strokeRect(18, -8.5, 9, 17);
-      break;
-    }
-    case 'vexia': {
-      // Double-Limbed Crimson Rail-Crossbow
-      ctx.fillStyle = '#475569';
-      ctx.fillRect(0, -3.5, 24, 7);
-      ctx.strokeRect(0, -3.5, 24, 7);
-      ctx.strokeStyle = '#F43F5E';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(16, -13);
-      ctx.quadraticCurveTo(23, 0, 16, 13);
-      ctx.stroke();
-      break;
-    }
-    case 'xylar': {
-      // Razor Plasma Wrist-Blade
-      ctx.fillStyle = h.cloakCritReady ? '#FDE047' : '#38BDF8';
-      ctx.beginPath();
-      ctx.moveTo(4, -4);
-      ctx.lineTo(32, -1);
-      ctx.lineTo(14, 5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'caldris': {
-      // Tethered Soul-Rail Crystal Focus
-      ctx.fillStyle = '#14B8A6';
-      ctx.beginPath();
-      ctx.moveTo(12, -7);
-      ctx.lineTo(29, 0);
-      ctx.lineTo(12, 7);
-      ctx.lineTo(6, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      break;
-    }
-    case 'vespra': {
-      // Swinging Brass Plague Censer
-      ctx.strokeStyle = '#A16207';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(4, 0);
-      ctx.lineTo(22, 2);
-      ctx.stroke();
-      ctx.fillStyle = '#84CC16';
-      ctx.beginPath();
-      ctx.arc(24, 2, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = INK;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      break;
-    }
-    case 'vale': {
-      // Golden Solar Prism Lance
-      ctx.fillStyle = '#F59E0B';
-      ctx.fillRect(-6, -2.5, 26, 5);
-      ctx.strokeRect(-6, -2.5, 26, 5);
-      ctx.fillStyle = '#FEF08A';
-      ctx.beginPath();
-      ctx.moveTo(18, -6);
-      ctx.lineTo(36, 0);
-      ctx.lineTo(18, 6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      break;
-    }
-  }
-
-  // Sweeping Melee Energy Crescent or Ranged Muzzle Flash synced to strike window!
-  if (anim.attackTimer > 0 && atkProgress > 0.16 && atkProgress < 0.72) {
-    const flare = 1 - Math.abs((atkProgress - 0.38) / 0.34);
-    ctx.globalAlpha = Math.max(0, Math.min(1, flare)) * 0.92;
-    if (h.heroId === 'marrow' || h.heroId === 'vorg' || h.heroId === 'xylar') {
-      const arcCol =
-        h.heroId === 'marrow' ? '#34D399' : h.heroId === 'vorg' ? '#C084FC' : h.cloakCritReady ? '#FDE047' : '#38BDF8';
-      ctx.strokeStyle = arcCol;
-      ctx.lineWidth = h.heroId === 'marrow' ? 8 : 5.5;
-      ctx.beginPath();
-      ctx.arc(8, 0, h.heroId === 'marrow' ? 38 : 31, -1.05, 1.05);
-      ctx.stroke();
-      ctx.strokeStyle = '#FFFFFF';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.arc(10, 0, h.heroId === 'marrow' ? 35 : 28, -0.75, 0.75);
-      ctx.stroke();
     } else {
-      ctx.fillStyle = accentColor;
-      ctx.beginPath();
-      ctx.moveTo(26, 0);
-      ctx.lineTo(44 + flare * 11, -8);
-      ctx.lineTo(37, 0);
-      ctx.lineTo(44 + flare * 11, 8);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.beginPath();
-      ctx.arc(31, 0, 4 + flare * 3, 0, Math.PI * 2);
-      ctx.fill();
+      // Muzzle flash: bright, front-loaded, gone by 40% of the cycle (ranged reads as a snap, not a swing)
+      const flash = p < 0.4 ? 1 - p / 0.4 : 0;
+      if (flash > 0) {
+        const size = style === 'heavy' ? 1.6 : style === 'caster' ? 1.25 : 1;
+        ctx.translate(mx, my);
+        ctx.rotate(aim);
+        ctx.globalAlpha = flash;
+        ctx.shadowColor = accentColor;
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = accentColor;
+        ctx.beginPath();
+        ctx.moveTo(-2, 0);
+        ctx.lineTo(10 * size, -7 * size * flash);
+        ctx.lineTo((18 + 10 * flash) * size, 0);
+        ctx.lineTo(10 * size, 7 * size * flash);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#FFFFFF';
+        ctx.beginPath();
+        ctx.arc(2, 0, (3 + 4 * flash) * size, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+    ctx.restore();
   }
 
-  ctx.restore();
+  if (anim.castTimer > 0) {
+    const p = castProgress(anim);
+    ctx.save();
+    if (anim.castSlot === 1) {
+      // Skill 1: gathering sparks converge on the hand, then burst outward on release (p > 0.45)
+      ctx.translate(mx, my);
+      if (p < 0.45) {
+        const g = p / 0.45;
+        for (let i = 0; i < 6; i++) {
+          const ang = i * 1.047 + time * 7;
+          const rr = 26 * (1 - g) + 4;
+          ctx.globalAlpha = 0.5 + 0.5 * g;
+          ctx.fillStyle = i % 2 ? '#FFFFFF' : accentColor;
+          ctx.beginPath();
+          ctx.arc(Math.cos(ang) * rr, Math.sin(ang) * rr, 2.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        const r = (p - 0.45) / 0.55;
+        ctx.globalAlpha = 1 - r;
+        ctx.strokeStyle = accentColor;
+        ctx.lineWidth = 4 * (1 - r) + 1;
+        ctx.beginPath();
+        ctx.arc(0, 0, 6 + r * 30, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else {
+      // Skill 2: rune circle under the feet that spins up and flares
+      const pulse = Math.sin(p * Math.PI);
+      ctx.translate(0, h.h / 2);
+      ctx.scale(1, 0.32);
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = accentColor;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = accentColor;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(0, 0, 30 + pulse * 14, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([7, 6]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 20 + pulse * 10, time * 5, time * 5 + Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
-function drawHero(
+export function drawHero(
   ctx: CanvasRenderingContext2D,
   h: HeroEntity,
   time: number,
@@ -3070,7 +3007,7 @@ function drawHero(
 
   // Skill Cast Surge Halo Ring
   if (anim.castTimer > 0) {
-    const cp = 1 - anim.castTimer / 0.35;
+    const cp = castProgress(anim);
     ctx.save();
     ctx.strokeStyle = def.accentColor;
     ctx.globalAlpha = (1 - cp) * 0.85;
@@ -3215,40 +3152,95 @@ function drawHero(
       }
     }
 
-    // 2. Additive Combat Overlays (Attack Windup-Snap, Skill Cast Lunge, Hurt Flinch)
+    // 2. Additive combat motion. The painted sprite has its arms/weapon baked in, so instead of
+    //    rotating the sliced torso band (which tears at the waist seam) we move the WHOLE body:
+    //    a shear that leans the upper body while the feet stay planted, a small lunge, and
+    //    squash/stretch. Timing: anticipation -> snap -> recover, on the duration the trigger set.
+    let bodyLean = 0; // + leans toward facing direction, pivoting at the feet
+    let lungeX = 0;
+    const aimFwd = Math.cos(h.aimAngle) * h.facing >= 0 ? 1 : -1;
+    const atkStyle = HERO_ATTACK_STYLE[h.heroId] ?? 'ranged';
+    const easeOut = (x: number) => 1 - Math.pow(1 - x, 3);
+
     if (anim.attackTimer > 0) {
-      const ap = 1 - anim.attackTimer / 0.26;
-      if (ap < 0.24) {
-        // Anticipation pull-back
-        const w = ap / 0.24;
-        torsoRot -= 0.18 * w;
-        torsoShiftX -= 4 * w;
+      const ap = attackProgress(anim);
+      if (atkStyle === 'melee') {
+        // Big wind-up, hard forward slash, slow settle
+        if (ap < 0.2) {
+          const w = easeOut(ap / 0.2);
+          bodyLean -= 0.16 * w * aimFwd;
+          lungeX -= 3 * w * aimFwd;
+          rootScaleX *= 1 + 0.05 * w;
+          rootScaleY *= 1 - 0.05 * w;
+        } else if (ap < 0.45) {
+          const k = easeOut((ap - 0.2) / 0.25);
+          bodyLean += (-0.16 + 0.42 * k) * aimFwd;
+          lungeX += (-3 + 12 * k) * aimFwd;
+          rootScaleX *= 1 - 0.06 * k;
+          rootScaleY *= 1 + 0.06 * k;
+        } else {
+          const r = easeOut((ap - 0.45) / 0.55);
+          bodyLean += 0.26 * (1 - r) * aimFwd;
+          lungeX += 9 * (1 - r) * aimFwd;
+        }
       } else {
-        // Explosive strike lunge & follow-through
-        const s = 1 - (ap - 0.24) / 0.76;
-        torsoRot += 0.22 * s;
-        torsoShiftX += 6.5 * s;
-        headRot -= 0.06 * s;
-        if (h.grounded && !isFloatingHero) {
-          frontLegRot -= 0.22 * s;
-          backLegRot += 0.2 * s;
+        // Ranged: tiny brace, then recoil kicks the body BACK from the shot and springs home
+        const kick = atkStyle === 'heavy' ? 1.8 : atkStyle === 'caster' ? 1.2 : 1;
+        if (ap < 0.12) {
+          const w = ap / 0.12;
+          bodyLean += 0.05 * w * aimFwd * kick;
+        } else {
+          const r = (ap - 0.12) / 0.88;
+          const spring = Math.sin(r * Math.PI) * (1 - r * 0.5);
+          bodyLean -= 0.12 * spring * aimFwd * kick;
+          lungeX -= 4 * spring * aimFwd * kick;
+          rootScaleX *= 1 + 0.035 * spring * kick;
+          rootScaleY *= 1 - 0.035 * spring * kick;
         }
       }
     }
 
     if (anim.castTimer > 0) {
-      const cp = Math.sin((1 - anim.castTimer / 0.35) * Math.PI);
-      torsoRot += (anim.castSlot === 2 ? -0.16 : 0.18) * cp;
-      torsoShiftX += (anim.castSlot === 1 ? 7 : 2) * cp;
-      rootLift += (anim.castSlot === 2 ? 6 : 2) * cp;
-      headRot -= 0.12 * cp;
+      const cp = castProgress(anim);
+      if (anim.castSlot === 1) {
+        // Gather (crouch back) then thrust forward on release
+        if (cp < 0.45) {
+          const g = easeOut(cp / 0.45);
+          bodyLean -= 0.12 * g * aimFwd;
+          rootScaleX *= 1 + 0.06 * g;
+          rootScaleY *= 1 - 0.07 * g;
+        } else {
+          const r = (cp - 0.45) / 0.55;
+          const thrust = Math.sin(Math.min(1, r * 1.6) * Math.PI * 0.5) * (1 - r);
+          bodyLean += (0.28 * thrust - 0.12 * (1 - Math.min(1, r * 3))) * aimFwd;
+          lungeX += 8 * thrust * aimFwd;
+          rootScaleX *= 1 - 0.05 * thrust;
+          rootScaleY *= 1 + 0.07 * thrust;
+        }
+      } else {
+        // Skill 2: squat, then rise up and stretch tall as the power releases
+        if (cp < 0.35) {
+          const g = easeOut(cp / 0.35);
+          rootScaleX *= 1 + 0.1 * g;
+          rootScaleY *= 1 - 0.1 * g;
+        } else {
+          const r = (cp - 0.35) / 0.65;
+          const up = Math.sin(Math.min(1, r * 1.4) * Math.PI * 0.5) * (1 - r * 0.6);
+          rootLift += 10 * up;
+          rootScaleX *= 1 - 0.06 * up;
+          rootScaleY *= 1 + 0.1 * up;
+        }
+      }
     }
 
     if (anim.hurtTimer > 0) {
-      const hpct = anim.hurtTimer / 0.2;
-      torsoRot -= 0.22 * hpct;
-      torsoShiftX -= 5.5 * hpct;
-      headRot -= 0.2 * hpct;
+      // Knocked back: lean away from facing, quick squash
+      const hpct = easeOut(anim.hurtTimer / 0.2);
+      bodyLean -= 0.2 * hpct;
+      lungeX -= 5 * hpct;
+      rootScaleX *= 1 + 0.05 * hpct;
+      rootScaleY *= 1 - 0.05 * hpct;
+      headRot -= 0.12 * hpct;
     }
 
     // Subtle vertical aim tracking on head so champion looks toward their reticle!
@@ -3322,8 +3314,18 @@ function drawHero(
     ctx.save();
     ctx.translate(0, h.h / 2 + 2 - rootLift);
     ctx.scale(rootScaleX * h.facing, rootScaleY);
-    ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
-    ctx.shadowBlur = h.isPlayer ? 12 : 9;
+    ctx.translate(lungeX, 0);
+    // Shear pivots at the feet (y = 0): upper body leans, boots stay planted on the ground
+    if (bodyLean !== 0) ctx.transform(1, 0, -bodyLean, 1, 0, 0);
+    if (anim.castTimer > 0) {
+      // Charge glow in the hero's accent colour while casting
+      const glow = Math.sin(castProgress(anim) * Math.PI);
+      ctx.shadowColor = def.accentColor;
+      ctx.shadowBlur = 10 + 18 * glow;
+    } else {
+      ctx.shadowColor = isEnemy ? 'rgba(244, 63, 94, 0.55)' : 'rgba(56, 189, 248, 0.48)';
+      ctx.shadowBlur = h.isPlayer ? 12 : 9;
+    }
 
     const rig = sprite.rig;
     if (rig) {
@@ -3390,10 +3392,7 @@ function drawHero(
     ctx.restore();
 
     // Layer 3: Dedicated 360°-Aimed Animated Foreground Weapon Rig + Slash/Muzzle VFX
-    ctx.save();
-    ctx.translate(0, h.h / 2 + 2 - rootLift);
-    drawHeroAnimatedWeaponRig(ctx, h, anim, time, def.accentColor, spriteH);
-    ctx.restore();
+    drawHeroAttackVfx(ctx, h, anim, time, def.accentColor);
 
     // Precision 360-degree Aim Direction Pip for the local player (hidden during end cinematic)
     if (h.isPlayer && !endCinematic?.active) {
@@ -4805,6 +4804,8 @@ function drawSummon(ctx: CanvasRenderingContext2D, s: SummonEntity, time: number
 function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileEntity, time: number): void {
   ctx.save();
   ctx.translate(p.x, p.y);
+  // Pulsing light halo so every projectile reads as energy, not a flat shape
+  drawGlow(ctx, 0, 0, Math.max(14, p.radius * 2.4) * (1 + Math.sin(time * 30 + p.x * 0.05) * 0.08), p.color || '#FFFFFF', 0.75);
   const angle = Math.atan2(p.vy, p.vx);
 
   if (p.kind === 'cleaver') {
