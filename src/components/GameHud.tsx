@@ -1,5 +1,18 @@
 import { useState } from 'react';
-import { Volume2, VolumeX, Music, Pause, Copy, Check, Swords, Shield, Flame } from 'lucide-react';
+import {
+  Volume2,
+  VolumeX,
+  Music,
+  Mic,
+  MicOff,
+  Megaphone,
+  Pause,
+  Copy,
+  Check,
+  Swords,
+  Shield,
+  Flame,
+} from 'lucide-react';
 import { ASCENSION_INFUSIONS, HERO_MAP } from '../game/heroes';
 import { JUMP_PADS, WORLD_H, WORLD_W } from '../game/map';
 import {
@@ -8,6 +21,7 @@ import {
   buildUpgradeTooltip,
 } from '../game/tooltips';
 import type { HudSnapshot } from '../game/types';
+import type { ActiveVoiceSubtitle } from '../game/voices';
 import { AbilitySvgIcon, RelicCorners, SolarCrystalIcon, UpgradeSvgIcon } from './AbilityIcon';
 import { AbilityTooltipCard, SimpleTooltipCard, UpgradeTooltipCard } from './TooltipCard';
 
@@ -15,10 +29,13 @@ interface GameHudProps {
   hud: HudSnapshot;
   muted: boolean;
   musicMuted: boolean;
+  voicesMuted: boolean;
+  activeSubtitle: ActiveVoiceSubtitle | null;
   shopOpen: boolean;
   onToggleShop: () => void;
   onToggleMute: () => void;
   onToggleMusic: () => void;
+  onToggleVoices: () => void;
   onTogglePause: () => void;
   onRecall: () => void;
 }
@@ -33,10 +50,13 @@ export function GameHud({
   hud,
   muted,
   musicMuted,
+  voicesMuted,
+  activeSubtitle,
   shopOpen,
   onToggleShop,
   onToggleMute,
   onToggleMusic,
+  onToggleVoices,
   onTogglePause,
   onRecall,
 }: GameHudProps) {
@@ -284,6 +304,19 @@ export function GameHud({
               <Music className={`w-4 h-4 ${musicMuted || muted ? 'text-slate-500' : 'text-amber-300'}`} />
               {(musicMuted || muted) && (
                 <span className="pointer-events-none absolute w-5 h-0.5 bg-rose-400 rotate-45 rounded" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onToggleVoices}
+              aria-label={voicesMuted ? 'Unmute voices' : 'Mute voices'}
+              title={voicesMuted ? 'Voices Off' : 'Voices On'}
+              className="w-9 h-9 rounded-lg bg-[#080B14]/94 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+            >
+              {voicesMuted || muted ? (
+                <MicOff className="w-4 h-4 text-rose-400" />
+              ) : (
+                <Mic className="w-4 h-4 text-amber-300" />
               )}
             </button>
             <button
@@ -734,6 +767,43 @@ export function GameHud({
                   hud.player.upgrades
                 )}
               />
+            </div>
+          )}
+
+          {/* Low-Occlusion Champion & Cathedral Herald Voice Subtitle Strip */}
+          {!hoveredAbility && activeSubtitle && !activeSubtitle.loading && (
+            <div
+              className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 z-40 w-max max-w-[420px]"
+              aria-live="polite"
+            >
+              <div
+                className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg bg-[#070A14]/92 border border-slate-700/85 shadow-xl"
+                style={{ borderLeftWidth: '3px', borderLeftColor: activeSubtitle.accentColor }}
+              >
+                {activeSubtitle.portrait ? (
+                  <img
+                    src={activeSubtitle.portrait}
+                    alt={activeSubtitle.speakerName}
+                    referrerPolicy="no-referrer"
+                    className="w-7 h-7 rounded object-cover object-top border border-slate-600 shrink-0"
+                  />
+                ) : (
+                  <span className="w-7 h-7 rounded bg-amber-500/15 border border-amber-400/45 flex items-center justify-center shrink-0 text-amber-300">
+                    <Megaphone className="w-3.5 h-3.5" />
+                  </span>
+                )}
+                <div className="min-w-0">
+                  <div
+                    className="font-display text-[10px] font-bold uppercase tracking-wider leading-tight"
+                    style={{ color: activeSubtitle.accentColor }}
+                  >
+                    {activeSubtitle.speakerName}
+                  </div>
+                  <div className="text-xs text-slate-100 italic leading-snug">
+                    &ldquo;{activeSubtitle.text}&rdquo;
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Link2 } from 'lucide-react';
+import { Check, Link2, Mic, MicOff, Music, Volume2, VolumeX } from 'lucide-react';
+import { gameAudio } from '../game/audio';
 import { computeHeroStats, HERO_LIST, KEY_ART_URL } from '../game/heroes';
 import { buildAbilityTooltip } from '../game/tooltips';
 import type { MatchMode, RoomSummary } from '../game/netTypes';
 import type { Difficulty, HeroId, Team } from '../game/types';
+import { gameVoices, type ActiveVoiceSubtitle } from '../game/voices';
 import { AbilitySvgIcon, RelicCorners, SolarnautsLogo } from './AbilityIcon';
 import { AbilityTooltipCard } from './TooltipCard';
 
@@ -21,6 +23,14 @@ interface TitleScreenProps {
   teamPref: 'auto' | Team;
   onChangeTeamPref: (team: 'auto' | Team) => void;
   lobbyNotice?: string | null;
+  muted: boolean;
+  musicMuted: boolean;
+  voicesMuted: boolean;
+  onToggleMute: () => void;
+  onToggleMusic: () => void;
+  onToggleVoices: () => void;
+  activeSubtitle: ActiveVoiceSubtitle | null;
+  voiceError: string | null;
   onStartGame: (opts: {
     mode: MatchMode;
     heroId: HeroId;
@@ -45,6 +55,14 @@ export function TitleScreen({
   teamPref,
   onChangeTeamPref,
   lobbyNotice,
+  muted,
+  musicMuted,
+  voicesMuted,
+  onToggleMute,
+  onToggleMusic,
+  onToggleVoices,
+  activeSubtitle,
+  voiceError,
   onStartGame,
 }: TitleScreenProps) {
   const inviteRoomParam = useMemo(() => {
@@ -58,10 +76,30 @@ export function TitleScreen({
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [imgErrors, setImgErrors] = useState<Record<string, boolean>>({});
+  const [voiceCycleIdx, setVoiceCycleIdx] = useState(0);
   const [hoveredAbility, setHoveredAbility] = useState<{
     slot: 'primary' | 'skill1' | 'skill2';
     rect: DOMRect;
   } | null>(null);
+
+  const handlePickHero = (heroId: HeroId) => {
+    gameAudio.unlock();
+    onSelectHero(heroId);
+    setVoiceCycleIdx(1);
+    if (!muted && !voicesMuted) {
+      gameVoices.playChampionLine(heroId, 'select', { force: true });
+    }
+  };
+
+  const handlePreviewVoice = () => {
+    gameAudio.unlock();
+    if (muted) onToggleMute();
+    if (voicesMuted) onToggleVoices();
+    const cycle = ['select', 'spawn', 'skill1', 'kill'] as const;
+    const trigger = cycle[voiceCycleIdx % cycle.length];
+    setVoiceCycleIdx((prev) => prev + 1);
+    gameVoices.playChampionLine(activeHero.id, trigger, { force: true });
+  };
 
   const handleCopyInvite = () => {
     const clean =
@@ -166,12 +204,54 @@ export function TitleScreen({
       <div className="relative z-10 flex-1 flex flex-col justify-center px-6 lg:px-12 py-4 max-w-[1440px] w-full mx-auto overflow-y-auto">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
           <SolarnautsLogo className="w-[310px] sm:w-[375px] h-auto" />
-          <div className="hidden md:flex items-center gap-2 text-xs text-slate-400 pb-1">
-            <span>2-Tier Reliquary Towers</span>
-            <span aria-hidden="true">·</span>
-            <span>4 High-Impact Specializations + Overclock</span>
-            <span aria-hidden="true">·</span>
-            <span>10–15 Min Matches</span>
+          <div className="flex items-center gap-4 pb-1">
+            <div className="hidden lg:flex items-center gap-2 text-xs text-slate-400">
+              <span>2-Tier Reliquary Towers</span>
+              <span aria-hidden="true">·</span>
+              <span>4 High-Impact Specializations</span>
+              <span aria-hidden="true">·</span>
+              <span>10–15 Min Matches</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={onToggleMusic}
+                aria-label={musicMuted ? 'Unmute symphonic soundtrack' : 'Mute symphonic soundtrack'}
+                title={musicMuted ? 'Soundtrack: Off' : 'Soundtrack: On'}
+                className="relative w-8 h-8 rounded-lg bg-[#090D18]/95 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+              >
+                <Music className={`w-3.5 h-3.5 ${musicMuted || muted ? 'text-slate-500' : 'text-amber-300'}`} />
+                {(musicMuted || muted) && (
+                  <span className="pointer-events-none absolute w-4 h-0.5 bg-rose-400 rotate-45 rounded" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onToggleVoices}
+                aria-label={voicesMuted ? 'Unmute champion voices' : 'Mute champion voices'}
+                title={voicesMuted ? 'Voices: Off' : 'Voices: On'}
+                className="w-8 h-8 rounded-lg bg-[#090D18]/95 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+              >
+                {voicesMuted || muted ? (
+                  <MicOff className="w-3.5 h-3.5 text-rose-400" />
+                ) : (
+                  <Mic className="w-3.5 h-3.5 text-amber-300" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onToggleMute}
+                aria-label={muted ? 'Unmute master audio' : 'Mute master audio'}
+                title={muted ? 'Master Audio: Muted' : 'Master Audio: On'}
+                className="w-8 h-8 rounded-lg bg-[#090D18]/95 border border-slate-700/80 hover:border-amber-400/60 flex items-center justify-center text-slate-200 cursor-pointer transition-colors"
+              >
+                {muted ? (
+                  <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                ) : (
+                  <Volume2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -220,7 +300,7 @@ export function TitleScreen({
                   <button
                     key={hero.id}
                     type="button"
-                    onClick={() => onSelectHero(hero.id)}
+                    onClick={() => handlePickHero(hero.id)}
                     className={`group relative text-left rounded-xl overflow-hidden border transition-all duration-150 cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-400 ${
                       isSelected
                         ? 'border-amber-400/90 bg-[#141B2D] scale-[1.015] shadow-lg shadow-amber-500/15'
@@ -329,15 +409,26 @@ export function TitleScreen({
                     {activeHero.craftSummary}
                   </p>
 
-                  {/* Signature Talent Build Paths (Clean unboxed metadata) */}
-                  <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 pt-0.5">
-                    <span className="font-semibold text-amber-300/90">Build Paths:</span>
-                    {signaturePaths.map((pathName, i) => (
-                      <span key={pathName} className="inline-flex items-center gap-2">
-                        {i > 0 && <span className="text-slate-600" aria-hidden="true">·</span>}
-                        <span className="text-slate-200">{pathName}</span>
-                      </span>
-                    ))}
+                  {/* Signature Talent Build Paths + Champion Voice Audition */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                    <div className="text-[11px] text-slate-400 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="font-semibold text-amber-300/90">Build Paths:</span>
+                      {signaturePaths.map((pathName, i) => (
+                        <span key={pathName} className="inline-flex items-center gap-2">
+                          {i > 0 && <span className="text-slate-600" aria-hidden="true">·</span>}
+                          <span className="text-slate-200">{pathName}</span>
+                        </span>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handlePreviewVoice}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#101829] hover:bg-[#192640] border border-amber-500/35 hover:border-amber-400/70 text-[11px] font-semibold text-amber-200 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <Volume2 className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Voice Line</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -379,6 +470,35 @@ export function TitleScreen({
                   </div>
                 ))}
               </div>
+
+              {/* Active Voice Line Subtitle / Status Strip */}
+              {(activeSubtitle || voiceError) && (
+                <div
+                  className="mt-3 pt-2.5 border-t border-slate-800/85 flex items-center justify-between gap-3 text-xs"
+                  aria-live="polite"
+                >
+                  {activeSubtitle ? (
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="font-display font-bold shrink-0"
+                        style={{ color: activeSubtitle.accentColor }}
+                      >
+                        {activeSubtitle.speakerName}:
+                      </span>
+                      <span className="text-slate-200 italic truncate">
+                        &ldquo;{activeSubtitle.text}&rdquo;
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-rose-300/90 truncate">{voiceError}</span>
+                  )}
+                  {activeSubtitle?.loading && (
+                    <span className="text-[11px] text-amber-300/80 shrink-0 font-mono-num">
+                      Voicing...
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

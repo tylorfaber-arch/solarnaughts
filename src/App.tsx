@@ -8,6 +8,7 @@ import { GameEngine, type EngineLaunchConfig } from './game/engine';
 import type { MatchMode } from './game/netTypes';
 import { ensureArenaArtLoaded } from './game/sprites';
 import type { Difficulty, HeroId, HudSnapshot, Team } from './game/types';
+import { gameVoices, type ActiveVoiceSubtitle } from './game/voices';
 
 function readInitialLobbyFromUrl(): { roomCode: string; teamPref: 'auto' | Team } {
   const params = new URLSearchParams(window.location.search);
@@ -40,6 +41,9 @@ export default function App() {
   const [tabHeld, setTabHeld] = useState(false);
   const [muted, setMuted] = useState(() => gameAudio.isMuted());
   const [musicMuted, setMusicMuted] = useState(() => gameAudio.isMusicMuted());
+  const [voicesMuted, setVoicesMuted] = useState(() => gameAudio.isVoicesMuted());
+  const [activeSubtitle, setActiveSubtitle] = useState<ActiveVoiceSubtitle | null>(null);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [connectSlow, setConnectSlow] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -78,7 +82,18 @@ export default function App() {
     ensureArenaArtLoaded();
   }, []);
 
+  // Subscribe to live Champion & Cathedral Herald voice subtitles and status errors
+  useEffect(() => {
+    const unsubSub = gameVoices.subscribeSubtitle(setActiveSubtitle);
+    const unsubErr = gameVoices.subscribeError(setVoiceError);
+    return () => {
+      unsubSub();
+      unsubErr();
+    };
+  }, []);
+
   const handleReturnToLobby = useCallback((returnedRoomId: string, reason: string) => {
+    gameVoices.stop();
     setShopOpen(false);
     setPauseMenuOpen(false);
     setTabHeld(false);
@@ -189,11 +204,23 @@ export default function App() {
   }, []);
 
   const handleToggleMute = useCallback(() => {
-    setMuted(gameAudio.toggleMute());
+    const nextMuted = gameAudio.toggleMute();
+    setMuted(nextMuted);
+    if (nextMuted) {
+      gameVoices.stop();
+    }
   }, []);
 
   const handleToggleMusic = useCallback(() => {
     setMusicMuted(gameAudio.toggleMusicMute());
+  }, []);
+
+  const handleToggleVoices = useCallback(() => {
+    const nextMuted = gameAudio.toggleVoicesMute();
+    setVoicesMuted(nextMuted);
+    if (nextMuted) {
+      gameVoices.stop();
+    }
   }, []);
 
   const handleTogglePause = useCallback(() => {
@@ -217,6 +244,7 @@ export default function App() {
   }, []);
 
   const handleExitToTitle = useCallback(() => {
+    gameVoices.stop();
     setShopOpen(false);
     setPauseMenuOpen(false);
     setTabHeld(false);
@@ -265,6 +293,14 @@ export default function App() {
         teamPref={teamPref}
         onChangeTeamPref={setTeamPref}
         lobbyNotice={lobbyNotice}
+        muted={muted}
+        musicMuted={musicMuted}
+        voicesMuted={voicesMuted}
+        onToggleMute={handleToggleMute}
+        onToggleMusic={handleToggleMusic}
+        onToggleVoices={handleToggleVoices}
+        activeSubtitle={activeSubtitle}
+        voiceError={voiceError}
         onStartGame={handleStartGame}
       />
     );
@@ -331,6 +367,8 @@ export default function App() {
           hud={hud}
           muted={muted}
           musicMuted={musicMuted}
+          voicesMuted={voicesMuted}
+          activeSubtitle={activeSubtitle}
           shopOpen={shopOpen}
           onToggleShop={() => {
             setPauseMenuOpen(false);
@@ -338,9 +376,40 @@ export default function App() {
           }}
           onToggleMute={handleToggleMute}
           onToggleMusic={handleToggleMusic}
+          onToggleVoices={handleToggleVoices}
           onTogglePause={handleTogglePause}
           onRecall={handleRecall}
         />
+      )}
+
+      {/* Cinematic Voice Subtitle Strip during Victory/Defeat sequence */}
+      {endCinematicActive && activeSubtitle && !activeSubtitle.loading && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-7 z-30 flex justify-center px-4">
+          <div
+            className="flex items-center gap-3 max-w-xl px-4 py-2.5 rounded-xl bg-[#070A14]/90 border border-amber-500/40 shadow-2xl"
+            style={{ borderLeftWidth: '3px', borderLeftColor: activeSubtitle.accentColor }}
+          >
+            {activeSubtitle.portrait && (
+              <img
+                src={activeSubtitle.portrait}
+                alt={activeSubtitle.speakerName}
+                referrerPolicy="no-referrer"
+                className="w-8 h-8 rounded-md object-cover object-top border border-amber-400/50 shrink-0"
+              />
+            )}
+            <div className="min-w-0">
+              <div
+                className="font-display text-[11px] font-bold uppercase tracking-wider leading-tight"
+                style={{ color: activeSubtitle.accentColor }}
+              >
+                {activeSubtitle.speakerName}
+              </div>
+              <div className="text-sm text-slate-100 italic leading-snug mt-0.5">
+                &ldquo;{activeSubtitle.text}&rdquo;
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Skill Tree Upgrade Shop Modal [B] */}
@@ -363,10 +432,12 @@ export default function App() {
           hud={hud}
           muted={muted}
           musicMuted={musicMuted}
+          voicesMuted={voicesMuted}
           onResume={handleResume}
           onSwitchHero={handleSwitchHero}
           onToggleMute={handleToggleMute}
           onToggleMusic={handleToggleMusic}
+          onToggleVoices={handleToggleVoices}
           onExitToTitle={handleExitToTitle}
         />
       )}

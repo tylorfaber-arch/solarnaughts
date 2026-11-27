@@ -134,10 +134,12 @@ interface PauseModalProps {
   hud: HudSnapshot;
   muted: boolean;
   musicMuted: boolean;
+  voicesMuted: boolean;
   onResume: () => void;
   onSwitchHero: (heroId: HeroId) => void;
   onToggleMute: () => void;
   onToggleMusic: () => void;
+  onToggleVoices: () => void;
   onExitToTitle: () => void;
 }
 
@@ -145,10 +147,12 @@ export function PauseModal({
   hud,
   muted,
   musicMuted,
+  voicesMuted,
   onResume,
   onSwitchHero,
   onToggleMute,
   onToggleMusic,
+  onToggleVoices,
   onExitToTitle,
 }: PauseModalProps) {
   const [copiedInvite, setCopiedInvite] = useState(false);
@@ -312,20 +316,27 @@ export function PauseModal({
                 </button>
               )}
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={onToggleMute}
-                  className="py-2.5 px-3 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
+                  className="py-2.5 px-2.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
                 >
-                  {muted ? 'Unmute Audio' : 'Mute Audio'}
+                  {muted ? 'Audio: Off' : 'Audio: On'}
                 </button>
                 <button
                   type="button"
                   onClick={onToggleMusic}
-                  className="py-2.5 px-3 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
+                  className="py-2.5 px-2.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
                 >
                   {musicMuted ? 'Music: Off' : 'Music: On'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onToggleVoices}
+                  className="py-2.5 px-2.5 rounded-xl text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 cursor-pointer whitespace-nowrap"
+                >
+                  {voicesMuted ? 'Voices: Off' : 'Voices: On'}
                 </button>
               </div>
 

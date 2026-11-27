@@ -827,6 +827,7 @@ export class ArenaSimulation {
     this.updateMapObjects(dt);
     this.updateSummons(dt);
     this.updateProjectiles(dt);
+    this.enforceArenaSafetyZone();
   }
 
   private createHero(
@@ -1526,15 +1527,29 @@ export class ArenaSimulation {
     dt: number
   ): void {
     const wasGrounded = ent.grounded;
-    ent.x += ent.vx * dt;
-    ent.x = Math.max(26 + ent.w / 2, Math.min(WORLD_W - 26 - ent.w / 2, ent.x));
-
+    const prevX = ent.x;
     const prevBottom = ent.y + ent.h / 2;
+    const halfW = ent.w / 2;
+
+    ent.x += ent.vx * dt;
+    ent.x = Math.max(26 + halfW, Math.min(WORLD_W - 26 - halfW, ent.x));
+
+    // Prevent entities inside the sunken Primordial Crypt pit (y > 964) from walking sideways
+    // into the subterranean side walls of ground_left (x=2260) or ground_right (x=3140).
+    if (prevBottom > 966 && prevX >= 2260 - halfW && prevX <= 3140 + halfW) {
+      if (ent.x - halfW < 2260) {
+        ent.x = 2260 + halfW;
+        if (ent.vx < 0) ent.vx = 0;
+      } else if (ent.x + halfW > 3140) {
+        ent.x = 3140 - halfW;
+        if (ent.vx > 0) ent.vx = 0;
+      }
+    }
+
     ent.y += ent.vy * dt;
     ent.grounded = false;
 
     const newBottom = ent.y + ent.h / 2;
-    const halfW = ent.w / 2;
 
     for (const p of PLATFORMS) {
       const overlapX = ent.x + halfW > p.x && ent.x - halfW < p.x + p.w;
@@ -1567,9 +1582,132 @@ export class ArenaSimulation {
       }
     }
 
-    if (ent.y < 30) {
-      ent.y = 30;
+    // Hard solid bottom ground guarantee: never allow tunneling beneath the world floor!
+    const floorY = this.getGroundFloorY(ent.x);
+    if (ent.y + ent.h / 2 > floorY) {
+      ent.y = floorY - ent.h / 2;
+      if (ent.vy > 0) ent.vy = 0;
+      ent.grounded = true;
+    }
+
+    if (ent.y < 30 + ent.h / 2) {
+      ent.y = 30 + ent.h / 2;
       if (ent.vy < 0) ent.vy = 0;
+    }
+  }
+
+  /** Solid arena ground height at any horizontal position x (ground_left / crypt pit / ground_right). */
+  private getGroundFloorY(x: number): number {
+    return x >= 2260 && x <= 3140 ? 1065 : 960;
+  }
+
+  /** Clamps a displaced entity (hooked, pulled, blinked) safely inside arena walls & above solid floors. */
+  private clampEntityToArena(
+    ent: { x: number; y: number; vx: number; vy: number; w: number; h: number; grounded: boolean },
+    resolveSolidSlabs = true
+  ): void {
+    const halfW = ent.w / 2;
+    const halfH = ent.h / 2;
+    if (!Number.isFinite(ent.x)) ent.x = WORLD_W * 0.5;
+    if (!Number.isFinite(ent.y)) ent.y = 820;
+
+    ent.x = Math.max(26 + halfW, Math.min(WORLD_W - 26 - halfW, ent.x));
+    ent.y = Math.max(30 + halfH, ent.y);
+
+    // Keep above solid world ground floor at current x
+    const floorY = this.getGroundFloorY(ent.x);
+    if (ent.y + halfH > floorY) {
+      ent.y = floorY - halfH;
+      if (ent.vy > 0) ent.vy = 0;
+      ent.grounded = true;
+    }
+
+    // Resolve accidental embedding inside elevated solid battlements (e.g. Top Nave stone decks)
+    if (resolveSolidSlabs) {
+      for (const p of PLATFORMS) {
+        if (p.oneWay || p.y >= 950) continue;
+        if (
+          ent.x + halfW > p.x &&
+          ent.x - halfW < p.x + p.w &&
+          ent.y + halfH > p.y &&
+          ent.y - halfH < p.y + p.h
+        ) {
+          const distTop = Math.abs(ent.y + halfH - p.y);
+          const distBot = Math.abs(p.y + p.h - (ent.y - halfH));
+          if (distTop <= distBot) {
+            ent.y = p.y - halfH;
+            if (ent.vy > 0) ent.vy = 0;
+            ent.grounded = true;
+          } else {
+            ent.y = p.y + p.h + halfH;
+            if (ent.vy < 0) ent.vy = 0;
+          }
+        }
+      }
+    }
+  }
+
+  /** Out-of-bounds respawn safety zone: rescues any champion or droid that somehow exits the arena. */
+  private enforceArenaSafetyZone(): void {
+    const OOB_MARGIN_X = 48;
+    const OOB_TOP = -220;
+    const OOB_BOTTOM = WORLD_H + 50;
+
+    for (const h of this.heroes) {
+      if (!h.alive || h.inDropPod) continue;
+
+      const outOfBounds =
+        !Number.isFinite(h.x) ||
+        !Number.isFinite(h.y) ||
+        h.x < -OOB_MARGIN_X ||
+        h.x > WORLD_W + OOB_MARGIN_X ||
+        h.y < OOB_TOP ||
+        h.y > OOB_BOTTOM;
+
+      if (outOfBounds) {
+        const base = BASE_ZONES[h.team];
+        // Detach any active hook referencing this hero
+        if (h.hookedById) {
+          for (const hk of this.hooks) {
+            if (hk.latchedTargetId === h.id) {
+              hk.latchedTargetId = null;
+              this.hookGrabOffset.delete(hk.id);
+            }
+          }
+          h.hookedById = null;
+        }
+        h.x = base.spawnX;
+        h.y = base.spawnY - h.h / 2;
+        h.vx = 0;
+        h.vy = 0;
+        h.dashTimer = 0;
+        h.stunTimer = 0;
+        h.grounded = true;
+        h.invulnTimer = Math.max(h.invulnTimer, 0.85);
+        this.emitFx({ kind: 'ring', x: h.x, y: h.y, radius: 70, color: '#38BDF8' });
+        this.emitFx({
+          kind: 'text',
+          x: h.x,
+          y: h.y - 44,
+          text: 'SANCTUM RECOVERY',
+          color: '#38BDF8',
+          scale: 1.05,
+        });
+      }
+    }
+
+    for (let i = this.droids.length - 1; i >= 0; i--) {
+      const d = this.droids[i];
+      if (
+        !Number.isFinite(d.x) ||
+        !Number.isFinite(d.y) ||
+        d.x < -60 ||
+        d.x > WORLD_W + 60 ||
+        d.y > OOB_BOTTOM ||
+        d.y < OOB_TOP
+      ) {
+        this.droids.splice(i, 1);
+      }
     }
   }
 
@@ -2778,7 +2916,7 @@ export class ArenaSimulation {
         hk.x += (dx / dist) * pullSpeed * dt;
         hk.y += (dy / dist) * pullSpeed * dt;
 
-        // Drag latched victim along with the claw!
+        // Drag latched victim along with the claw — always clamped safely above solid floors!
         if (hk.latchedTargetId && hk.latchedTargetKind === 'hero') {
           const victim = this.heroes.find((h) => h.id === hk.latchedTargetId);
           if (victim && victim.alive && !victim.inDropPod) {
@@ -2787,6 +2925,8 @@ export class ArenaSimulation {
             victim.y = hk.y + (off?.dy ?? 0);
             victim.vx = 0;
             victim.vy = 0;
+            // Never drag a victim beneath solid world ground or outside arena walls
+            this.clampEntityToArena(victim, false);
           } else {
             hk.latchedTargetId = null;
           }
@@ -2797,6 +2937,7 @@ export class ArenaSimulation {
             d.y = hk.y;
             d.vx = 0;
             d.vy = 0;
+            this.clampEntityToArena(d, false);
           } else {
             hk.latchedTargetId = null;
           }
@@ -2812,7 +2953,14 @@ export class ArenaSimulation {
       if (victim) {
         victim.hookedById = null;
         victim.vx = 0;
-        victim.vy = -80;
+        victim.vy = -70;
+        // Guarantee released victim never lands embedded inside a floor or solid battlement
+        this.clampEntityToArena(victim, true);
+      }
+    } else if (hk.latchedTargetId && hk.latchedTargetKind === 'droid') {
+      const d = this.droids.find((dr) => dr.id === hk.latchedTargetId);
+      if (d) {
+        this.clampEntityToArena(d, true);
       }
     }
   }
@@ -2925,6 +3073,7 @@ export class ArenaSimulation {
             other.x += (dx / dist) * pull;
             other.y += (dy / dist) * pull * 0.7;
             other.slowTimer = Math.max(other.slowTimer, 0.4);
+            this.clampEntityToArena(other, true);
           }
         }
         for (const d of this.droids) {
@@ -2933,6 +3082,7 @@ export class ArenaSimulation {
           const dist = Math.abs(dx);
           if (dist > 10 && dist <= hz.radius + 20) {
             d.x += Math.sign(dx) * 240 * pullScale * dt;
+            this.clampEntityToArena(d, true);
           }
         }
 

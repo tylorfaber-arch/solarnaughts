@@ -1,41 +1,65 @@
-// Cinematic Foley & Procedural Gothic-Sci-Fi Music Engine (Zero 8-bit/Retro Beeps)
+// Cinematic Foley, Grand Symphonic Gothic-Cathedral Score & Voice Bus Engine
 
 export type MusicMode = 'none' | 'menu' | 'battle' | 'tension';
 
 const NOTE_FREQ: Record<string, number> = {
+  G1: 49.0,
+  A1: 55.0,
+  Bb1: 58.27,
+  C2: 65.41,
+  Cs2: 69.3,
   D2: 73.42,
+  Eb2: 77.78,
   E2: 82.41,
   F2: 87.31,
+  Fs2: 92.5,
   G2: 98.0,
+  Ab2: 103.83,
   A2: 110.0,
   Bb2: 116.54,
   B2: 123.47,
   C3: 130.81,
   Cs3: 138.59,
   D3: 146.83,
+  Eb3: 155.56,
   E3: 164.81,
   F3: 174.61,
   Fs3: 185.0,
   G3: 196.0,
+  Ab3: 207.65,
   A3: 220.0,
   Bb3: 233.08,
+  B3: 246.94,
   C4: 261.63,
   Cs4: 277.18,
   D4: 293.66,
+  Eb4: 311.13,
   E4: 329.63,
   F4: 349.23,
   Fs4: 369.99,
   G4: 392.0,
+  Ab4: 415.3,
   A4: 440.0,
   Bb4: 466.16,
+  B4: 493.88,
   C5: 523.25,
   Cs5: 554.37,
   D5: 587.33,
+  Eb5: 622.25,
   E5: 659.25,
   F5: 698.46,
   Fs5: 739.99,
   G5: 783.99,
   A5: 880.0,
+  Bb5: 932.33,
+  C6: 1046.5,
+  D6: 1174.66,
+};
+
+const VOWEL_FORMANTS: Record<'ah' | 'ooh' | 'eh', [number, number, number]> = {
+  ah: [720, 1120, 2450],
+  ooh: [310, 860, 2240],
+  eh: [520, 1840, 2520],
 };
 
 function makeDistortionCurve(amount: number): Float32Array<ArrayBuffer> {
@@ -54,21 +78,28 @@ class GameAudio {
   private ctx: AudioContext | null = null;
   private sfxBus: GainNode | null = null;
   private musicBus: GainNode | null = null;
+  private musicDuckGain: GainNode | null = null;
+  private voiceBus: GainNode | null = null;
   private reverbNode: ConvolverNode | null = null;
   private reverbSend: GainNode | null = null;
+  private activeVoiceSource: AudioBufferSourceNode | null = null;
+  private activeVoiceResolve: (() => void) | null = null;
 
   private whiteNoise: AudioBuffer | null = null;
   private pinkNoise: AudioBuffer | null = null;
   private brownNoise: AudioBuffer | null = null;
   private softClipCurve: Float32Array<ArrayBuffer> = makeDistortionCurve(18);
   private hardClipCurve: Float32Array<ArrayBuffer> = makeDistortionCurve(55);
+  private brassWarmCurve: Float32Array<ArrayBuffer> = makeDistortionCurve(11);
 
   private muted = false;
   private musicMuted = false;
+  private voicesMuted = false;
+  private musicDucked = false;
   private lastShotTime = 0;
   private lastHitTime = 0;
 
-  // Procedural Music Engine State
+  // Grand Symphonic Music Engine State
   private musicMode: MusicMode = 'none';
   private schedulerId: number | null = null;
   private nextStepTime = 0;
@@ -87,28 +118,49 @@ class GameAudio {
       this.ctx = ctx;
 
       const compressor = ctx.createDynamicsCompressor();
-      compressor.threshold.value = -14;
+      compressor.threshold.value = -13;
       compressor.knee.value = 18;
-      compressor.ratio.value = 5;
-      compressor.attack.value = 0.004;
-      compressor.release.value = 0.14;
+      compressor.ratio.value = 4.5;
+      compressor.attack.value = 0.005;
+      compressor.release.value = 0.16;
       compressor.connect(ctx.destination);
 
       this.sfxBus = ctx.createGain();
-      this.sfxBus.gain.value = 0.9;
+      this.sfxBus.gain.value = 0.88;
       this.sfxBus.connect(compressor);
 
-      this.musicBus = ctx.createGain();
-      this.musicBus.gain.value = this.musicMuted ? 0 : 0.34;
-      this.musicBus.connect(compressor);
+      // Music flows through musicBus -> musicDuckGain -> master compressor
+      this.musicDuckGain = ctx.createGain();
+      this.musicDuckGain.gain.value = this.musicDucked ? 0.36 : 1.0;
+      this.musicDuckGain.connect(compressor);
 
-      // Synthetic stereo Cathedral Reverb impulse (1.45s lush gothic hall)
+      this.musicBus = ctx.createGain();
+      this.musicBus.gain.value = this.musicMuted ? 0 : this.getTargetMusicVolume(this.musicMode);
+      this.musicBus.connect(this.musicDuckGain);
+
+      // Lush 2.65s Stereo Cathedral Hall Convolution Reverb (early reflections + stone tail)
       this.reverbNode = ctx.createConvolver();
-      this.reverbNode.buffer = this.buildCathedralImpulse(ctx, 1.45, 2.8);
+      this.reverbNode.buffer = this.buildCathedralImpulse(ctx, 2.65, 2.35);
       this.reverbSend = ctx.createGain();
-      this.reverbSend.gain.value = 0.32;
+      this.reverbSend.gain.value = 0.36;
       this.reverbSend.connect(this.reverbNode);
       this.reverbNode.connect(compressor);
+
+      // Dedicated Voice Bus: crisp speech clarity + gentle presence shelf + cathedral touch
+      this.voiceBus = ctx.createGain();
+      this.voiceBus.gain.value = this.voicesMuted ? 0 : 1.05;
+      const voiceHp = ctx.createBiquadFilter();
+      voiceHp.type = 'highpass';
+      voiceHp.frequency.value = 85;
+      const voicePresence = ctx.createBiquadFilter();
+      voicePresence.type = 'peaking';
+      voicePresence.frequency.value = 2850;
+      voicePresence.Q.value = 0.9;
+      voicePresence.gain.value = 2.4;
+
+      this.voiceBus.connect(voiceHp);
+      voiceHp.connect(voicePresence);
+      voicePresence.connect(compressor);
 
       this.buildNoiseBuffers(ctx);
     }
@@ -117,6 +169,13 @@ class GameAudio {
       void this.ctx.resume().catch(() => {});
     }
     return this.ctx;
+  }
+
+  private getTargetMusicVolume(mode: MusicMode): number {
+    if (mode === 'menu') return 0.36;
+    if (mode === 'tension') return 0.42;
+    if (mode === 'battle') return 0.38;
+    return 0.0001;
   }
 
   public unlock(): void {
@@ -167,18 +226,36 @@ class GameAudio {
   }
 
   private buildCathedralImpulse(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
-    const length = Math.floor(ctx.sampleRate * duration);
-    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+    const sr = ctx.sampleRate;
+    const length = Math.floor(sr * duration);
+    const impulse = ctx.createBuffer(2, length, sr);
+    const earlyTaps = [
+      { ms: 18, gain: 0.42 },
+      { ms: 34, gain: 0.32 },
+      { ms: 58, gain: 0.24 },
+      { ms: 89, gain: 0.18 },
+      { ms: 126, gain: 0.12 },
+    ];
+
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       let lp = 0;
       for (let i = 0; i < length; i++) {
         const t = i / length;
-        const env = Math.pow(1 - t, decay);
+        const preDelay = i < sr * 0.014 ? 0.15 : 1.0;
+        const env = Math.pow(1 - t, decay) * preDelay;
         const raw = (Math.random() * 2 - 1) * env;
-        // Soft low-pass damping so reverb sounds like warm stone, not metallic fizz
-        lp = lp * 0.72 + raw * 0.28;
-        data[i] = lp * 0.7;
+        // Progressive high-frequency absorption as sound bounces off gothic stone arches
+        const damp = 0.66 + t * 0.26;
+        lp = lp * damp + raw * (1 - damp);
+        data[i] = lp * 0.68;
+      }
+      // Subtle stereo-offset early reflections for cavernous spatial depth
+      for (const tap of earlyTaps) {
+        const idx = Math.floor(((tap.ms + (ch === 1 ? 4.5 : 0)) / 1000) * sr);
+        if (idx < length) {
+          data[idx] += (ch === 0 ? 1 : -1) * tap.gain * 0.45;
+        }
       }
     }
     return impulse;
@@ -192,19 +269,30 @@ class GameAudio {
     this.muted = !this.muted;
     if (this.muted) {
       this.stopScheduler();
+      this.stopCurrentVoice();
       if (this.musicBus && this.ctx) {
         this.musicBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
       }
       if (this.sfxBus && this.ctx) {
         this.sfxBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
       }
+      if (this.voiceBus && this.ctx) {
+        this.voiceBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03);
+      }
     } else {
       const ctx = this.ensureContext();
       if (ctx && this.sfxBus) {
-        this.sfxBus.gain.setTargetAtTime(0.9, ctx.currentTime, 0.04);
+        this.sfxBus.gain.setTargetAtTime(0.88, ctx.currentTime, 0.04);
+      }
+      if (ctx && this.voiceBus) {
+        this.voiceBus.gain.setTargetAtTime(this.voicesMuted ? 0 : 1.05, ctx.currentTime, 0.04);
       }
       if (ctx && this.musicBus) {
-        this.musicBus.gain.setTargetAtTime(this.musicMuted ? 0 : 0.34, ctx.currentTime, 0.08);
+        this.musicBus.gain.setTargetAtTime(
+          this.musicMuted ? 0 : this.getTargetMusicVolume(this.musicMode),
+          ctx.currentTime,
+          0.08
+        );
       }
       if (this.musicMode !== 'none' && !this.musicMuted) {
         this.startScheduler();
@@ -227,13 +315,125 @@ class GameAudio {
     } else if (!this.muted) {
       const ctx = this.ensureContext();
       if (ctx && this.musicBus) {
-        this.musicBus.gain.setTargetAtTime(0.34, ctx.currentTime, 0.08);
+        this.musicBus.gain.setTargetAtTime(
+          this.getTargetMusicVolume(this.musicMode),
+          ctx.currentTime,
+          0.08
+        );
       }
       if (this.musicMode !== 'none') {
         this.startScheduler();
       }
     }
     return this.musicMuted;
+  }
+
+  public isVoicesMuted(): boolean {
+    return this.voicesMuted;
+  }
+
+  public toggleVoicesMute(): boolean {
+    this.voicesMuted = !this.voicesMuted;
+    if (this.voicesMuted) {
+      this.stopCurrentVoice();
+      if (this.voiceBus && this.ctx) {
+        this.voiceBus.gain.setTargetAtTime(0, this.ctx.currentTime, 0.04);
+      }
+    } else if (!this.muted) {
+      const ctx = this.ensureContext();
+      if (ctx && this.voiceBus) {
+        this.voiceBus.gain.setTargetAtTime(1.05, ctx.currentTime, 0.05);
+      }
+    }
+    return this.voicesMuted;
+  }
+
+  public duckMusic(ducked: boolean): void {
+    this.musicDucked = ducked;
+    if (this.musicDuckGain && this.ctx) {
+      const target = ducked ? 0.36 : 1.0;
+      const tau = ducked ? 0.07 : 0.32;
+      this.musicDuckGain.gain.setTargetAtTime(target, this.ctx.currentTime, tau);
+    }
+  }
+
+  public stopCurrentVoice(): void {
+    if (this.activeVoiceSource) {
+      try {
+        this.activeVoiceSource.onended = null;
+        this.activeVoiceSource.stop();
+      } catch {
+        // Ignore already-stopped source
+      }
+      this.activeVoiceSource = null;
+    }
+    if (this.activeVoiceResolve) {
+      const fn = this.activeVoiceResolve;
+      this.activeVoiceResolve = null;
+      fn();
+    }
+    this.duckMusic(false);
+  }
+
+  public async playVoiceWavBuffer(
+    wavData: ArrayBuffer,
+    opts?: { isAnnouncer?: boolean }
+  ): Promise<void> {
+    if (this.muted || this.voicesMuted) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.voiceBus) return;
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch {
+        return;
+      }
+    }
+
+    // Clone buffer because decodeAudioData detaches the passed ArrayBuffer
+    const decoded = await ctx.decodeAudioData(wavData.slice(0));
+
+    // Preempt any currently speaking voice line cleanly
+    this.stopCurrentVoice();
+
+    return new Promise<void>((resolve) => {
+      if (this.muted || this.voicesMuted || !this.ctx || !this.voiceBus) {
+        resolve();
+        return;
+      }
+
+      const src = this.ctx.createBufferSource();
+      src.buffer = decoded;
+
+      const clipGain = this.ctx.createGain();
+      clipGain.gain.value = opts?.isAnnouncer ? 1.15 : 1.0;
+
+      src.connect(clipGain);
+      clipGain.connect(this.voiceBus);
+
+      // Cathedral hall send (richer reverb on the Cathedral Herald, subtle room polish on champions)
+      if (this.reverbSend) {
+        const wet = this.ctx.createGain();
+        wet.gain.value = opts?.isAnnouncer ? 0.34 : 0.13;
+        clipGain.connect(wet);
+        wet.connect(this.reverbSend);
+      }
+
+      this.activeVoiceSource = src;
+      this.activeVoiceResolve = resolve;
+      this.duckMusic(true);
+
+      src.onended = () => {
+        if (this.activeVoiceSource === src) {
+          this.activeVoiceSource = null;
+          this.activeVoiceResolve = null;
+          this.duckMusic(false);
+        }
+        resolve();
+      };
+
+      src.start();
+    });
   }
 
   // === MODERN FOLEY SYNTHESIS PRIMITIVES ===
@@ -826,7 +1026,7 @@ class GameAudio {
     this.playFMVoice(784, 587, 1920, 340, 0.2, 0.075, 0, 4200, 0.26);
   }
 
-  // === CINEMATIC VICTORY FANFARE & DEFEAT REQUIEM ===
+  // === CINEMATIC VICTORY FANFARE & DEFEAT REQUIEM (SYMPHONIC CATHEDRAL EDITION) ===
 
   public victory(): void {
     this.playVictoryFanfare();
@@ -837,109 +1037,115 @@ class GameAudio {
   }
 
   public playVictoryFanfare(): void {
-    // Stop battle soundtrack so the Victory Fanfare owns the entire soundstage
     this.setMusicMode('none');
     const ctx = this.ensureContext();
     if (!ctx || !this.sfxBus) return;
+    const now = ctx.currentTime;
 
-    // 1. Shattering Core shockwave boom + triumphant war-drum roll
-    this.playSubPunch(108, 22, 0.65, 0.44, 0, true);
-    this.playFilteredNoise('brown', 0.55, 0.34, 'lowpass', 1500, 140, 0.7, 0, 0.004, 0.34);
+    // 1. Core shatter shockwave + rapid orchestral Timpani & Snare crescendo roll
+    this.playSubPunch(108, 22, 0.7, 0.44, 0, true);
+    this.playFilteredNoise('brown', 0.62, 0.34, 'lowpass', 1500, 140, 0.7, 0, 0.004, 0.38);
 
-    // Snare/war-drum pickup roll leading into the brass fanfare
-    const rollTimes = [0.22, 0.34, 0.44, 0.52, 0.59, 0.65];
-    rollTimes.forEach((t, idx) => {
-      this.playSubPunch(92 + idx * 4, 38, 0.12, 0.16 + idx * 0.025, t, true);
-      this.playFilteredNoise('pink', 0.09, 0.11 + idx * 0.015, 'bandpass', 1400, 540, 1.2, t, 0.003, 0.16);
+    const rollSteps = [0.22, 0.33, 0.43, 0.51, 0.58, 0.64, 0.69];
+    rollSteps.forEach((t, idx) => {
+      this.orchTimpani(NOTE_FREQ.A1, now + t, 0.24 + idx * 0.03, 0.38, this.sfxBus!);
+      this.orchSnare(now + t, 0.12 + idx * 0.025, true, this.sfxBus!);
     });
 
-    // 2. Majestic Gothic Brass & Pipe Organ Fanfare in D Major (0.72s -> 3.4s)
-    // Melody: D4 -> A4 -> F#4 -> A4 -> D5 (held radiant resolution!)
-    const fanfareCalls: Array<{ delay: number; dur: number; notes: number[]; cut: number }> = [
-      { delay: 0.72, dur: 0.34, notes: [NOTE_FREQ.D3, NOTE_FREQ.A3, NOTE_FREQ.D4], cut: 2400 },
-      { delay: 1.06, dur: 0.3, notes: [NOTE_FREQ.A3, NOTE_FREQ.E4, NOTE_FREQ.A4], cut: 2800 },
-      { delay: 1.36, dur: 0.32, notes: [NOTE_FREQ.Fs3, NOTE_FREQ.D4, NOTE_FREQ.Fs4], cut: 2600 },
-      { delay: 1.68, dur: 0.34, notes: [NOTE_FREQ.A3, NOTE_FREQ.E4, NOTE_FREQ.A4], cut: 3100 },
-      // Grand Final D Major Cathedral Chord (D2 + D3 + A3 + D4 + F#4 + A4 + D5)
-      {
-        delay: 2.04,
-        dur: 2.15,
-        notes: [
-          NOTE_FREQ.D2,
-          NOTE_FREQ.D3,
-          NOTE_FREQ.A3,
-          NOTE_FREQ.D4,
-          NOTE_FREQ.Fs4,
-          NOTE_FREQ.A4,
-          NOTE_FREQ.D5,
-        ],
-        cut: 3800,
-      },
+    // 2. Heroic French Horn & Trumpet Fanfare in D Major (D4 -> A4 -> F#4 -> A4 -> D5!)
+    const calls: Array<{ delay: number; dur: number; melody: number; harmony: number[] }> = [
+      { delay: 0.74, dur: 0.34, melody: NOTE_FREQ.D4, harmony: [NOTE_FREQ.D3, NOTE_FREQ.A3] },
+      { delay: 1.08, dur: 0.30, melody: NOTE_FREQ.A4, harmony: [NOTE_FREQ.A3, NOTE_FREQ.E4] },
+      { delay: 1.38, dur: 0.32, melody: NOTE_FREQ.Fs4, harmony: [NOTE_FREQ.D3, NOTE_FREQ.A3] },
+      { delay: 1.70, dur: 0.34, melody: NOTE_FREQ.A4, harmony: [NOTE_FREQ.A3, NOTE_FREQ.E4] },
     ];
-
-    for (const call of fanfareCalls) {
-      // Rich detuned orchestral brass layer
-      this.playFilteredSynth(call.notes, 'sawtooth', call.dur, 0.125, call.cut, call.cut * 0.38, call.delay, 0.028, 0.45);
-      // Slight chorus detune for huge cathedral ensemble width
-      this.playFilteredSynth(
-        call.notes.map((f) => f * 1.0045),
-        'sawtooth',
-        call.dur,
-        0.085,
-        call.cut * 0.85,
-        call.cut * 0.32,
-        call.delay + 0.01,
-        0.04,
-        0.48
-      );
+    for (const c of calls) {
+      this.orchBrass(c.melody, now + c.delay, c.dur, 0.24, 0.12, this.sfxBus);
+      this.orchBrass(c.melody * 0.5, now + c.delay, c.dur, 0.16, -0.18, this.sfxBus);
+      this.orchPipeOrgan(c.harmony, now + c.delay, c.dur + 0.08, 0.11, 2200, this.sfxBus);
     }
 
-    // 3. Celebratory Cathedral Bell Chimes & Cymbal Wash on the final chord (2.04s)
-    this.playSubPunch(84, 28, 0.55, 0.34, 2.04, true);
-    this.playFMVoice(NOTE_FREQ.D5, NOTE_FREQ.D5, NOTE_FREQ.D5 * 2.756, 480, 1.65, 0.11, 2.04, 5200, 0.52);
-    this.playFMVoice(NOTE_FREQ.A5, NOTE_FREQ.A5, NOTE_FREQ.A5 * 2.756, 360, 1.4, 0.075, 2.22, 5800, 0.55);
-    this.playFilteredNoise('white', 1.35, 0.14, 'highpass', 3800, 6200, 0.8, 2.04, 0.03, 0.42);
+    // 3. Monumental Final D-Major Cathedral Tutti (Pipe Organ + Formant Choir + Strings + Brass + Bells)
+    const finale = now + 2.06;
+    this.orchTimpani(NOTE_FREQ.D2, finale, 0.48, 0.85, this.sfxBus);
+    this.orchCymbal(finale, 0.24, 2.1, this.sfxBus);
+    this.orchPipeOrgan(
+      [NOTE_FREQ.D2, NOTE_FREQ.D3, NOTE_FREQ.A3, NOTE_FREQ.D4, NOTE_FREQ.Fs4],
+      finale,
+      2.55,
+      0.19,
+      3400,
+      this.sfxBus
+    );
+    this.orchChoir(
+      [NOTE_FREQ.D4, NOTE_FREQ.Fs4, NOTE_FREQ.A4, NOTE_FREQ.D5],
+      finale + 0.04,
+      2.6,
+      0.24,
+      'ah',
+      this.sfxBus
+    );
+    this.orchBrass(NOTE_FREQ.D5, finale, 2.25, 0.22, 0.15, this.sfxBus);
+    this.orchBrass(NOTE_FREQ.A4, finale, 2.25, 0.17, -0.22, this.sfxBus);
+    this.orchStringLegato(NOTE_FREQ.Fs5, finale + 0.06, 2.4, 0.14, 0.28, this.sfxBus);
+    this.orchTubularBell(NOTE_FREQ.D5, finale, 0.22, 2.4, -0.25, this.sfxBus);
+    this.orchTubularBell(NOTE_FREQ.A5, finale + 0.26, 0.16, 2.1, 0.25, this.sfxBus);
   }
 
   public playDefeatRequiem(): void {
-    // Stop battle soundtrack so the solemn Defeat Requiem owns the moment
     this.setMusicMode('none');
     const ctx = this.ensureContext();
     if (!ctx || !this.sfxBus) return;
+    const now = ctx.currentTime;
 
-    // 1. Core collapse seismic quake
-    this.playSubPunch(92, 18, 0.82, 0.44, 0, true);
-    this.playFilteredNoise('brown', 0.78, 0.36, 'lowpass', 980, 95, 0.7, 0, 0.005, 0.36);
+    // 1. Seismic core collapse
+    this.playSubPunch(92, 18, 0.85, 0.44, 0, true);
+    this.playFilteredNoise('brown', 0.82, 0.36, 'lowpass', 980, 95, 0.7, 0, 0.005, 0.42);
 
-    // 2. Heavy Bronze Cathedral Funeral Bell Tolls (inharmonic FM bell partials)
-    this.playFMVoice(NOTE_FREQ.D3, NOTE_FREQ.D3 * 0.992, NOTE_FREQ.D3 * 2.76, 620, 1.9, 0.16, 0.35, 2600, 0.55);
-    this.playFMVoice(NOTE_FREQ.A2, NOTE_FREQ.A2 * 0.99, NOTE_FREQ.A2 * 2.76, 520, 2.1, 0.15, 1.65, 2100, 0.58);
+    // 2. Heavy Bronze Funeral Cathedral Bells
+    this.orchTubularBell(NOTE_FREQ.D3, now + 0.32, 0.28, 2.6, -0.2, this.sfxBus);
+    this.orchTubularBell(NOTE_FREQ.A2, now + 1.62, 0.26, 2.8, 0.2, this.sfxBus);
 
-    // 3. Solemn Descending Minor Pipe-Organ & Dark Brass Dirge (Dm -> C -> Bb -> Dm)
-    const dirgeChords: Array<{ delay: number; dur: number; notes: number[] }> = [
-      { delay: 0.45, dur: 0.78, notes: [NOTE_FREQ.D2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.D4] },
-      { delay: 1.18, dur: 0.74, notes: [NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3, NOTE_FREQ.C4] },
-      { delay: 1.88, dur: 0.76, notes: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.Bb3] },
-      { delay: 2.55, dur: 1.65, notes: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3] },
+    // 3. Solemn Descending Minor Pipe-Organ & Mourning Choir Dirge (Dm -> C -> Bb -> Dm)
+    const dirge: Array<{ delay: number; dur: number; organ: number[]; choir: number[]; timp: number }> = [
+      {
+        delay: 0.42,
+        dur: 0.82,
+        organ: [NOTE_FREQ.D2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3],
+        choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4],
+        timp: NOTE_FREQ.D2,
+      },
+      {
+        delay: 1.22,
+        dur: 0.78,
+        organ: [NOTE_FREQ.C2, NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3],
+        choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4],
+        timp: NOTE_FREQ.C2,
+      },
+      {
+        delay: 1.98,
+        dur: 0.78,
+        organ: [NOTE_FREQ.Bb1, NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3],
+        choir: [NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.F4],
+        timp: NOTE_FREQ.Bb1,
+      },
+      {
+        delay: 2.74,
+        dur: 1.85,
+        organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3],
+        choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A3],
+        timp: NOTE_FREQ.D2,
+      },
     ];
 
-    for (const ch of dirgeChords) {
-      this.playFilteredSynth(ch.notes, 'sawtooth', ch.dur, 0.11, 1350, 340, ch.delay, 0.06, 0.5);
-      this.playFilteredSynth(
-        ch.notes.map((f) => f * 0.996),
-        'triangle',
-        ch.dur,
-        0.09,
-        980,
-        280,
-        ch.delay + 0.02,
-        0.08,
-        0.48
-      );
+    for (const d of dirge) {
+      this.orchTimpani(d.timp, now + d.delay, 0.3, 0.65, this.sfxBus);
+      this.orchPipeOrgan(d.organ, now + d.delay, d.dur, 0.16, 1380, this.sfxBus);
+      this.orchChoir(d.choir, now + d.delay + 0.04, d.dur + 0.18, 0.22, 'ooh', this.sfxBus);
     }
   }
 
-  // === DYNAMIC PROCEDURAL GOTHIC-SCI-FI SOUNDTRACK ===
+  // === GRAND SYMPHONIC GOTHIC-CATHEDRAL SOUNDTRACK ENGINE ===
 
   public setMusicMode(mode: MusicMode): void {
     if (this.musicMode === mode) return;
@@ -949,7 +1155,7 @@ class GameAudio {
     if (mode === 'none') {
       this.stopScheduler();
       if (this.musicBus && this.ctx) {
-        this.musicBus.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.16);
+        this.musicBus.gain.setTargetAtTime(0.0001, this.ctx.currentTime, 0.18);
       }
       return;
     }
@@ -964,8 +1170,7 @@ class GameAudio {
     if (!ctx) return;
 
     if (this.musicBus) {
-      const targetVol = mode === 'menu' ? 0.3 : mode === 'tension' ? 0.38 : 0.34;
-      this.musicBus.gain.setTargetAtTime(targetVol, ctx.currentTime, 0.25);
+      this.musicBus.gain.setTargetAtTime(this.getTargetMusicVolume(mode), ctx.currentTime, 0.28);
     }
 
     if (this.schedulerId === null) {
@@ -979,7 +1184,7 @@ class GameAudio {
     if (!ctx) return;
 
     this.nextStepTime = ctx.currentTime + 0.08;
-    this.schedulerId = window.setInterval(() => this.tickMusicScheduler(), 55);
+    this.schedulerId = window.setInterval(() => this.tickMusicScheduler(), 50);
   }
 
   private stopScheduler(): void {
@@ -997,303 +1202,907 @@ class GameAudio {
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running') return;
 
-    const bpm = this.musicMode === 'menu' ? 84 : this.musicMode === 'tension' ? 128 : 120;
+    const bpm = this.musicMode === 'menu' ? 76 : this.musicMode === 'tension' ? 134 : 124;
     const sixteenth = 60 / bpm / 4;
-    const lookahead = 0.16;
+    const lookahead = 0.18;
 
-    // Catch up cleanly if browser tab was backgrounded
-    if (this.nextStepTime < ctx.currentTime - 0.25) {
+    if (this.nextStepTime < ctx.currentTime - 0.3) {
       this.nextStepTime = ctx.currentTime + 0.05;
     }
 
+    const totalSteps = this.musicMode === 'menu' ? 256 : this.musicMode === 'tension' ? 256 : 512;
+
     while (this.nextStepTime < ctx.currentTime + lookahead) {
+      const wrappedStep = this.stepIndex % totalSteps;
       if (this.musicMode === 'menu') {
-        this.scheduleMenuStep(this.stepIndex, this.nextStepTime, sixteenth);
+        this.scheduleMenuOverture(wrappedStep, this.nextStepTime, sixteenth);
+      } else if (this.musicMode === 'tension') {
+        this.scheduleTensionReckoning(wrappedStep, this.nextStepTime, sixteenth);
       } else {
-        this.scheduleBattleStep(this.stepIndex, this.nextStepTime, sixteenth, this.musicMode === 'tension');
+        this.scheduleBattleSymphony(wrappedStep, this.nextStepTime, sixteenth);
       }
       this.nextStepTime += sixteenth;
-      this.stepIndex = (this.stepIndex + 1) % 128; // 8-bar loop (16 steps per bar)
+      this.stepIndex = (this.stepIndex + 1) % 512;
     }
   }
 
-  private scheduleMenuStep(step: number, time: number, sixteenth: number): void {
-    const bar = Math.floor(step / 16); // 0..7
-    const beatStep = step % 16;
-
-    // Cathedral progression: Dm -> Bb -> Gm -> A7 (2 bars each or 1 bar each)
-    const chords: Array<{ bass: number; pad: number[]; arp: number[] }> = [
-      { bass: NOTE_FREQ.D2, pad: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3], arp: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5] },
-      { bass: NOTE_FREQ.D2, pad: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3], arp: [NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.E4, NOTE_FREQ.D4] },
-      { bass: NOTE_FREQ.Bb2, pad: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3], arp: [NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4] },
-      { bass: NOTE_FREQ.C3, pad: [NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3], arp: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4, NOTE_FREQ.C5] },
-      { bass: NOTE_FREQ.D2, pad: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3], arp: [NOTE_FREQ.D4, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.E4] },
-      { bass: NOTE_FREQ.G2, pad: [NOTE_FREQ.G2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], arp: [NOTE_FREQ.G4, NOTE_FREQ.D4, NOTE_FREQ.Bb4, NOTE_FREQ.A4] },
-      { bass: NOTE_FREQ.Bb2, pad: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3], arp: [NOTE_FREQ.F4, NOTE_FREQ.D4, NOTE_FREQ.A4, NOTE_FREQ.G4] },
-      { bass: NOTE_FREQ.A2, pad: [NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3], arp: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5, NOTE_FREQ.A4] },
-    ];
-    const ch = chords[bar % chords.length];
-
-    // Lush cathedral choir/organ pad on beat 1 of each bar
-    if (beatStep === 0) {
-      this.musicPad(ch.pad, time, sixteenth * 15.8, 0.14, 980);
-      this.musicBass(ch.bass, time, sixteenth * 14, 0.16, 260);
-    }
-
-    // Subtle deep cathedral pulse on beat 1 and beat 3
-    if (beatStep === 0 || beatStep === 10) {
-      this.musicKick(time, beatStep === 0 ? 0.22 : 0.13);
-    }
-
-    // Delicate crystalline relic harp arpeggio on eighth/dotted notes
-    if (beatStep === 0 || beatStep === 4 || beatStep === 8 || beatStep === 12) {
-      const note = ch.arp[(beatStep / 4) % ch.arp.length];
-      this.musicPluck(note, time, sixteenth * 3.8, 0.085);
-    }
-  }
-
-  private scheduleBattleStep(step: number, time: number, sixteenth: number, tension: boolean): void {
-    const bar = Math.floor(step / 16); // 0..7
+  /**
+   * MENU OVERTURE: "Cathedral of the Shattered Sun" (76 BPM, 16-bar 2-section symphonic score)
+   * Bars 0..7: Sanctum Awakening — Pipe Organ, Harp filigree, Tubular Bells, rising Formant Choir
+   * Bars 8..15: March of the Champions — Sweeping Bowed Strings theme, French Horn counterpoint, Timpani
+   */
+  private scheduleMenuOverture(step: number, time: number, sixteenth: number): void {
+    const bar = Math.floor(step / 16); // 0..15
     const s = step % 16;
 
-    // 8-bar heroic Gothic-Sci-Fi Arena progression (Dm - Bb - C - Am | Dm - Gm - Bb - A7)
-    const prog = [
-      { root: NOTE_FREQ.D2, fifth: NOTE_FREQ.A2, chord: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3] },
-      { root: NOTE_FREQ.Bb2, fifth: NOTE_FREQ.F2, chord: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3] },
-      { root: NOTE_FREQ.C3, fifth: NOTE_FREQ.G2, chord: [NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3] },
-      { root: NOTE_FREQ.A2, fifth: NOTE_FREQ.E2, chord: [NOTE_FREQ.A2, NOTE_FREQ.C3, NOTE_FREQ.E3] },
-      { root: NOTE_FREQ.D2, fifth: NOTE_FREQ.A2, chord: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3] },
-      { root: NOTE_FREQ.G2, fifth: NOTE_FREQ.D2, chord: [NOTE_FREQ.G2, NOTE_FREQ.Bb2, NOTE_FREQ.D3] },
-      { root: NOTE_FREQ.Bb2, fifth: NOTE_FREQ.F2, chord: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3] },
-      { root: NOTE_FREQ.A2, fifth: NOTE_FREQ.E2, chord: [NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3] },
-    ];
-    const barData = prog[bar % prog.length];
+    const chords: Array<{
+      bass: number;
+      organ: number[];
+      choir: number[];
+      arp: number[];
+      vowel: 'ah' | 'ooh' | 'eh';
+    }> = [
+      // Section A (Bars 0-7): Dm -> Bb -> Gm -> A7 | Dm -> C -> Bb -> A7
+      { bass: NOTE_FREQ.D2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4], arp: [NOTE_FREQ.D4, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.D5, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.E4, NOTE_FREQ.D4], vowel: 'ooh' },
+      { bass: NOTE_FREQ.Bb1, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.Bb4], arp: [NOTE_FREQ.Bb3, NOTE_FREQ.F4, NOTE_FREQ.D4, NOTE_FREQ.Bb4, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.D4, NOTE_FREQ.F4], vowel: 'ooh' },
+      { bass: NOTE_FREQ.G1, organ: [NOTE_FREQ.G1, NOTE_FREQ.D2, NOTE_FREQ.G2, NOTE_FREQ.Bb2], choir: [NOTE_FREQ.D4, NOTE_FREQ.G4, NOTE_FREQ.Bb4], arp: [NOTE_FREQ.G3, NOTE_FREQ.D4, NOTE_FREQ.Bb4, NOTE_FREQ.G4, NOTE_FREQ.A4, NOTE_FREQ.G4, NOTE_FREQ.F4, NOTE_FREQ.D4], vowel: 'ooh' },
+      { bass: NOTE_FREQ.A1, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3], choir: [NOTE_FREQ.Cs4, NOTE_FREQ.E4, NOTE_FREQ.A4], arp: [NOTE_FREQ.A3, NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5, NOTE_FREQ.A4, NOTE_FREQ.G4, NOTE_FREQ.E4, NOTE_FREQ.Cs4], vowel: 'ah' },
 
-    // 1. War-Drum & Sci-Fi Arena Percussion
-    const kickPattern = tension
-      ? [0, 3, 6, 8, 10, 14]
-      : [0, 6, 8, 14];
-    if (kickPattern.includes(s)) {
-      this.musicKick(time, s === 0 || s === 8 ? 0.34 : 0.24);
+      { bass: NOTE_FREQ.D2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4], arp: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5, NOTE_FREQ.F5, NOTE_FREQ.D5, NOTE_FREQ.A4, NOTE_FREQ.F4], vowel: 'ah' },
+      { bass: NOTE_FREQ.C2, organ: [NOTE_FREQ.C2, NOTE_FREQ.G2, NOTE_FREQ.C3, NOTE_FREQ.E3], choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4], arp: [NOTE_FREQ.C4, NOTE_FREQ.G4, NOTE_FREQ.E4, NOTE_FREQ.C5, NOTE_FREQ.G4, NOTE_FREQ.E4, NOTE_FREQ.D4, NOTE_FREQ.C4], vowel: 'ah' },
+      { bass: NOTE_FREQ.Bb1, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.Bb4], arp: [NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.Bb4, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.D4], vowel: 'ah' },
+      { bass: NOTE_FREQ.A1, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3], choir: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5], arp: [NOTE_FREQ.A3, NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5, NOTE_FREQ.E5, NOTE_FREQ.Cs5, NOTE_FREQ.A4, NOTE_FREQ.E4], vowel: 'ah' },
+
+      // Section B (Bars 8-15): Grand Heroic Swell — Dm -> F -> C -> Gm | Bb -> C -> Dm -> A7 (Coronation)
+      { bass: NOTE_FREQ.D2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5], arp: [NOTE_FREQ.D4, NOTE_FREQ.A4, NOTE_FREQ.D5, NOTE_FREQ.F5, NOTE_FREQ.D5, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.A4], vowel: 'ah' },
+      { bass: NOTE_FREQ.F2, organ: [NOTE_FREQ.F2, NOTE_FREQ.C3, NOTE_FREQ.F3, NOTE_FREQ.A3], choir: [NOTE_FREQ.C4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.C5], arp: [NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.C5, NOTE_FREQ.F5, NOTE_FREQ.C5, NOTE_FREQ.A4, NOTE_FREQ.F4, NOTE_FREQ.C4], vowel: 'ah' },
+      { bass: NOTE_FREQ.C2, organ: [NOTE_FREQ.C2, NOTE_FREQ.G2, NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3], choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4, NOTE_FREQ.C5], arp: [NOTE_FREQ.C4, NOTE_FREQ.G4, NOTE_FREQ.C5, NOTE_FREQ.E5, NOTE_FREQ.C5, NOTE_FREQ.G4, NOTE_FREQ.E4, NOTE_FREQ.G4], vowel: 'ah' },
+      { bass: NOTE_FREQ.G1, organ: [NOTE_FREQ.G1, NOTE_FREQ.D2, NOTE_FREQ.G2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.D4, NOTE_FREQ.G4, NOTE_FREQ.Bb4], arp: [NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.G4, NOTE_FREQ.D4, NOTE_FREQ.Bb3], vowel: 'ooh' },
+
+      { bass: NOTE_FREQ.Bb1, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.Bb4, NOTE_FREQ.D5], arp: [NOTE_FREQ.Bb3, NOTE_FREQ.F4, NOTE_FREQ.Bb4, NOTE_FREQ.D5, NOTE_FREQ.F5, NOTE_FREQ.D5, NOTE_FREQ.Bb4, NOTE_FREQ.F4], vowel: 'ah' },
+      { bass: NOTE_FREQ.C2, organ: [NOTE_FREQ.C2, NOTE_FREQ.G2, NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3], choir: [NOTE_FREQ.E4, NOTE_FREQ.G4, NOTE_FREQ.C5, NOTE_FREQ.E5], arp: [NOTE_FREQ.C4, NOTE_FREQ.G4, NOTE_FREQ.C5, NOTE_FREQ.E5, NOTE_FREQ.G5, NOTE_FREQ.E5, NOTE_FREQ.C5, NOTE_FREQ.G4], vowel: 'ah' },
+      { bass: NOTE_FREQ.D2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5], arp: [NOTE_FREQ.D4, NOTE_FREQ.A4, NOTE_FREQ.D5, NOTE_FREQ.F5, NOTE_FREQ.A5, NOTE_FREQ.F5, NOTE_FREQ.D5, NOTE_FREQ.A4], vowel: 'ah' },
+      { bass: NOTE_FREQ.A1, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3], choir: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5], arp: [NOTE_FREQ.A3, NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5, NOTE_FREQ.E5, NOTE_FREQ.Cs5, NOTE_FREQ.A4, NOTE_FREQ.E4], vowel: 'ooh' },
+    ];
+    const ch = chords[bar];
+    const inGrand = bar >= 8;
+
+    // 1. Grand Cathedral Pipe Organ + Formant Choir foundation on beat 1
+    if (s === 0) {
+      this.orchPipeOrgan(ch.organ, time, sixteenth * 16.4, inGrand ? 0.13 : 0.105, inGrand ? 2100 : 1350);
+      if (bar >= 2) {
+        this.orchChoir(ch.choir, time + 0.04, sixteenth * 15.8, inGrand ? 0.175 : 0.125, ch.vowel);
+      }
+      // Deep Contrabass bowed pedal
+      this.orchStringLegato(ch.bass * 2, time, sixteenth * 15.5, inGrand ? 0.13 : 0.095, -0.35);
+    }
+
+    // 2. Cathedral Tubular Bells on structural arrivals
+    if (s === 0 && (bar === 0 || bar === 4 || bar === 8 || bar === 12 || bar === 14)) {
+      const bellNote = bar === 12 ? NOTE_FREQ.Bb4 : bar === 14 ? NOTE_FREQ.D5 : NOTE_FREQ.D4;
+      this.orchTubularBell(bellNote, time, inGrand ? 0.125 : 0.095, 2.8, bar % 4 === 0 ? -0.32 : 0.32);
+    }
+    if (s === 0 && (bar === 8 || bar === 14)) {
+      this.orchCymbal(time, 0.13, 2.4);
+    }
+
+    // 3. Arcane Harp arpeggio flowing across 8th notes
+    if (s % 2 === 0) {
+      const arpNote = ch.arp[(s / 2) % ch.arp.length];
+      const pan = ((s / 2) % 2 === 0 ? -0.28 : 0.28);
+      this.orchHarp(arpNote, time, sixteenth * 3.8, inGrand ? 0.08 : 0.068, pan);
+    }
+
+    // 4. Majestic Timpani Heartbeat & Rolls (builds through Section B)
+    if (bar >= 4 && s === 0) {
+      this.orchTimpani(ch.bass, time, inGrand ? 0.28 : 0.17, 0.65);
+    }
+    if (inGrand && (s === 8 || s === 12)) {
+      this.orchTimpani(ch.bass, time, s === 8 ? 0.19 : 0.14, 0.45);
+    }
+    if ((bar === 7 || bar === 15) && (s === 12 || s === 13 || s === 14 || s === 15)) {
+      this.orchTimpani(ch.bass, time, 0.12 + (s - 12) * 0.045, 0.25);
+    }
+
+    // 5. Soaring Legato Violins & French Horn Melody in Section B (Bars 8-15)
+    if (inGrand) {
+      const violinTheme: Record<number, Record<number, { n: number; len: number }>> = {
+        8: { 0: { n: NOTE_FREQ.A4, len: 6 }, 6: { n: NOTE_FREQ.D5, len: 6 }, 12: { n: NOTE_FREQ.F5, len: 4 } },
+        9: { 0: { n: NOTE_FREQ.E5, len: 4 }, 4: { n: NOTE_FREQ.F5, len: 4 }, 8: { n: NOTE_FREQ.C5, len: 8 } },
+        10: { 0: { n: NOTE_FREQ.G5, len: 6 }, 6: { n: NOTE_FREQ.F5, len: 4 }, 10: { n: NOTE_FREQ.E5, len: 6 } },
+        11: { 0: { n: NOTE_FREQ.D5, len: 8 }, 8: { n: NOTE_FREQ.Bb4, len: 4 }, 12: { n: NOTE_FREQ.A4, len: 4 } },
+        12: { 0: { n: NOTE_FREQ.D5, len: 6 }, 6: { n: NOTE_FREQ.F5, len: 6 }, 12: { n: NOTE_FREQ.Bb5, len: 4 } },
+        13: { 0: { n: NOTE_FREQ.A5, len: 6 }, 6: { n: NOTE_FREQ.G5, len: 4 }, 10: { n: NOTE_FREQ.E5, len: 6 } },
+        14: { 0: { n: NOTE_FREQ.F5, len: 8 }, 8: { n: NOTE_FREQ.A5, len: 8 } },
+        15: { 0: { n: NOTE_FREQ.E5, len: 10 }, 10: { n: NOTE_FREQ.Cs5, len: 6 } },
+      };
+      const vNote = violinTheme[bar]?.[s];
+      if (vNote) {
+        this.orchStringLegato(vNote.n, time, sixteenth * vNote.len * 1.04, 0.145, 0.22);
+      }
+
+      // Noble French Horn counter-calls
+      const hornCalls: Record<number, Record<number, { n: number; len: number }>> = {
+        8: { 0: { n: NOTE_FREQ.D4, len: 8 }, 8: { n: NOTE_FREQ.F4, len: 8 } },
+        10: { 0: { n: NOTE_FREQ.E4, len: 8 }, 8: { n: NOTE_FREQ.C4, len: 8 } },
+        12: { 0: { n: NOTE_FREQ.F4, len: 6 }, 6: { n: NOTE_FREQ.D4, len: 6 }, 12: { n: NOTE_FREQ.F4, len: 4 } },
+        14: { 0: { n: NOTE_FREQ.D4, len: 8 }, 8: { n: NOTE_FREQ.A4, len: 8 } },
+      };
+      const hNote = hornCalls[bar]?.[s];
+      if (hNote) {
+        this.orchBrass(hNote.n, time, sixteenth * hNote.len * 0.98, 0.125, -0.26);
+      }
+    }
+  }
+
+  /**
+   * BATTLE SYMPHONY: "Siege of the Reliquary" (124 BPM, 32-bar / 512-step 4-movement orchestral epic)
+   * Movement I  (Bars  0..7): Gathering Storm (Dm) — Driving Spiccato Strings, War Drums, Pipe Organ
+   * Movement II (Bars  8..15): Heroic Vanguard (Dm) — Soaring French Horn & Brass Main Theme, Marching Snares
+   * Movement III(Bars 16..23): Cathedral Crusade (Modulation to G minor -> Eb -> F -> A7) — Towering Choir, Violins & Bells
+   * Movement IV (Bars 24..31): Symphonic Tutti Finale (Dm) — Full Orchestra + Choir + Brass Climax + Anvil Strikes
+   */
+  private scheduleBattleSymphony(step: number, time: number, sixteenth: number): void {
+    const bar = Math.floor(step / 16); // 0..31
+    const s = step % 16;
+    const movement = Math.floor(bar / 8); // 0, 1, 2, 3
+    const mBar = bar % 8;
+
+    type BarHarmony = {
+      root: number;
+      fifth: number;
+      organ: number[];
+      choir: number[];
+      spiccato: number[];
+      vowel: 'ah' | 'ooh' | 'eh';
+    };
+
+    const dmSuite: BarHarmony[] = [
+      { root: NOTE_FREQ.D2, fifth: NOTE_FREQ.A2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4], spiccato: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.D4], vowel: 'ah' },
+      { root: NOTE_FREQ.Bb1, fifth: NOTE_FREQ.F2, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.Bb4], spiccato: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.Bb3], vowel: 'ah' },
+      { root: NOTE_FREQ.C2, fifth: NOTE_FREQ.G2, organ: [NOTE_FREQ.C2, NOTE_FREQ.G2, NOTE_FREQ.C3, NOTE_FREQ.E3], choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4], spiccato: [NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3, NOTE_FREQ.C4], vowel: 'eh' },
+      { root: NOTE_FREQ.A1, fifth: NOTE_FREQ.E2, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.C3], choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.A4], spiccato: [NOTE_FREQ.A2, NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.A3], vowel: 'ooh' },
+      { root: NOTE_FREQ.D2, fifth: NOTE_FREQ.A2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4], spiccato: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.D4], vowel: 'ah' },
+      { root: NOTE_FREQ.G1, fifth: NOTE_FREQ.D2, organ: [NOTE_FREQ.G1, NOTE_FREQ.D2, NOTE_FREQ.G2, NOTE_FREQ.Bb2], choir: [NOTE_FREQ.D4, NOTE_FREQ.G4, NOTE_FREQ.Bb4], spiccato: [NOTE_FREQ.G2, NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.G3], vowel: 'ah' },
+      { root: NOTE_FREQ.Bb1, fifth: NOTE_FREQ.F2, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.F4, NOTE_FREQ.Bb4, NOTE_FREQ.D5], spiccato: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.Bb3], vowel: 'ah' },
+      { root: NOTE_FREQ.A1, fifth: NOTE_FREQ.E2, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3], choir: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5], spiccato: [NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3, NOTE_FREQ.A3], vowel: 'eh' },
+    ];
+
+    // Movement III Modulation: G minor -> Eb -> F -> Dm | Gm -> Eb -> Bb -> A7 (lifts back to Dm!)
+    const gmCrusade: BarHarmony[] = [
+      { root: NOTE_FREQ.G1, fifth: NOTE_FREQ.D2, organ: [NOTE_FREQ.G1, NOTE_FREQ.D2, NOTE_FREQ.G2, NOTE_FREQ.Bb2], choir: [NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.D5], spiccato: [NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.G4], vowel: 'ah' },
+      { root: NOTE_FREQ.Eb2, fifth: NOTE_FREQ.Bb2, organ: [NOTE_FREQ.Eb2, NOTE_FREQ.Bb2, NOTE_FREQ.Eb3, NOTE_FREQ.G3], choir: [NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.Eb5], spiccato: [NOTE_FREQ.Eb3, NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.Eb4], vowel: 'ah' },
+      { root: NOTE_FREQ.F2, fifth: NOTE_FREQ.C3, organ: [NOTE_FREQ.F2, NOTE_FREQ.C3, NOTE_FREQ.F3, NOTE_FREQ.A3], choir: [NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.C5], spiccato: [NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.C4, NOTE_FREQ.F4], vowel: 'ah' },
+      { root: NOTE_FREQ.D2, fifth: NOTE_FREQ.A2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5], spiccato: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.D4], vowel: 'ooh' },
+      { root: NOTE_FREQ.G1, fifth: NOTE_FREQ.D2, organ: [NOTE_FREQ.G1, NOTE_FREQ.D2, NOTE_FREQ.G2, NOTE_FREQ.Bb2], choir: [NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.D5], spiccato: [NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.D4, NOTE_FREQ.G4], vowel: 'ah' },
+      { root: NOTE_FREQ.Eb2, fifth: NOTE_FREQ.Bb2, organ: [NOTE_FREQ.Eb2, NOTE_FREQ.Bb2, NOTE_FREQ.Eb3, NOTE_FREQ.G3], choir: [NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.Eb5], spiccato: [NOTE_FREQ.Eb3, NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.Eb4], vowel: 'ah' },
+      { root: NOTE_FREQ.Bb1, fifth: NOTE_FREQ.F2, organ: [NOTE_FREQ.Bb1, NOTE_FREQ.F2, NOTE_FREQ.Bb2, NOTE_FREQ.D3], choir: [NOTE_FREQ.F4, NOTE_FREQ.Bb4, NOTE_FREQ.D5], spiccato: [NOTE_FREQ.Bb2, NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.Bb3], vowel: 'ah' },
+      { root: NOTE_FREQ.A1, fifth: NOTE_FREQ.E2, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3], choir: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5], spiccato: [NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3, NOTE_FREQ.A3], vowel: 'eh' },
+    ];
+
+    const h = movement === 2 ? gmCrusade[mBar] : dmSuite[mBar];
+
+    // 1. CINEMATIC WAR PERCUSSION (Taiko + Tuned Timpani + Marching Snare + Cymbals + Anvil)
+    const taikoHits = movement === 3 ? [0, 3, 6, 8, 10, 14] : [0, 6, 8, 14];
+    if (taikoHits.includes(s)) {
+      this.orchTaiko(time, s === 0 || s === 8 ? 0.36 : 0.23, s === 0 ? 96 : 112);
+    }
+    if (s === 0 || (movement >= 2 && s === 10)) {
+      this.orchTimpani(h.root, time, s === 0 ? 0.3 : 0.2, 0.45);
+    }
+    // Marching orchestral snare groove
+    if (s === 4 || s === 12) {
+      this.orchSnare(time, movement >= 1 ? 0.21 : 0.14, false);
+    } else if (movement >= 1 && (s === 7 || s === 11 || s === 15)) {
+      this.orchSnare(time, 0.08, true); // crisp ghost cadence
+    }
+    // Dramatic bar-end Timpani + Snare crescendo turnarounds
+    if ((mBar === 3 || mBar === 7) && s >= 12) {
+      this.orchTimpani(s === 15 ? h.fifth : h.root, time, 0.16 + (s - 12) * 0.05, 0.22);
+      if (s >= 13) this.orchSnare(time, 0.12 + (s - 13) * 0.04, true);
+    }
+    // Crash cymbals at movement entries & phrase peaks
+    if (s === 0 && (mBar === 0 || (mBar === 4 && movement >= 1))) {
+      this.orchCymbal(time, movement === 3 ? 0.2 : 0.14, 1.9);
+    }
+    // Gothic Iron Anvil strikes in Crusade & Finale movements
+    if (movement >= 2 && (s === 4 || (movement === 3 && s === 12))) {
+      this.orchAnvil(time, movement === 3 ? 0.095 : 0.065, s === 4 ? -0.35 : 0.35);
+    }
+
+    // 2. DRIVING 16TH-NOTE SPICCATO STRING OSTINATO (Hollywood epic momentum!)
+    const spiccPattern = [0, 1, 2, 1, 3, 2, 1, 2, 0, 1, 2, 3, 2, 1, 2, 1];
+    const playSpicc =
+      movement === 0 ? s % 2 === 0 || s === 3 || s === 11 : true;
+    if (playSpicc) {
+      const spFreq = h.spiccato[spiccPattern[s]];
+      const accent = s % 4 === 0 ? 1.25 : s % 2 === 0 ? 0.92 : 0.68;
+      this.orchSpiccato(
+        spFreq,
+        time,
+        sixteenth * 1.15,
+        (movement === 3 ? 0.115 : 0.095) * accent,
+        s % 2 === 0 ? -0.32 : 0.32
+      );
+    }
+
+    // 3. DEEP CONTRABASS & LOW BRASS FOUNDATION
+    if (s === 0 || s === 8) {
+      const lowFreq = s === 8 && mBar % 2 === 1 ? h.fifth : h.root;
+      this.orchLowBass(lowFreq, time, sixteenth * 7.6, movement === 3 ? 0.21 : 0.175);
+    }
+
+    // 4. GRAND CATHEDRAL PIPE ORGAN + FORMANT CHOIR
+    if (s === 0) {
+      this.orchPipeOrgan(
+        h.organ,
+        time,
+        sixteenth * 15.6,
+        movement === 3 ? 0.13 : 0.105,
+        movement >= 2 ? 2250 : 1550
+      );
+      if (movement >= 2 || (movement === 1 && mBar >= 4)) {
+        this.orchChoir(
+          h.choir,
+          time + 0.02,
+          sixteenth * 15.2,
+          movement === 3 ? 0.2 : 0.165,
+          h.vowel
+        );
+      }
+    }
+
+    // Cathedral Bell toll in Crusade & Finale
+    if (s === 0 && movement >= 2 && mBar % 2 === 0) {
+      this.orchTubularBell(h.root * 4, time, 0.1, 2.2, mBar % 4 === 0 ? -0.38 : 0.38);
+    }
+
+    // 5. SOARING MELODIC THEMES PER MOVEMENT
+    if (movement === 0) {
+      // Movement I: Arcane Harp & Cello anticipation motif
+      if (s === 0 || s === 3 || s === 6 || s === 8 || s === 11 || s === 14) {
+        const idx = s === 0 ? 0 : s === 3 ? 1 : s === 6 ? 2 : s === 8 ? 3 : s === 11 ? 2 : 1;
+        this.orchHarp(h.spiccato[idx] * 2, time, sixteenth * 2.6, 0.082, idx % 2 === 0 ? -0.25 : 0.25);
+      }
+    } else if (movement === 1 || movement === 3) {
+      // Movement II & IV: HEROIC FRENCH HORN & BRASS ANTHEM (plus Octave Violins in Movement IV!)
+      const heroicTheme: Record<number, Record<number, { n: number; len: number }>> = {
+        0: { 0: { n: NOTE_FREQ.D4, len: 3 }, 3: { n: NOTE_FREQ.F4, len: 3 }, 6: { n: NOTE_FREQ.A4, len: 6 }, 12: { n: NOTE_FREQ.G4, len: 4 } },
+        1: { 0: { n: NOTE_FREQ.F4, len: 6 }, 6: { n: NOTE_FREQ.D4, len: 4 }, 10: { n: NOTE_FREQ.F4, len: 6 } },
+        2: { 0: { n: NOTE_FREQ.G4, len: 3 }, 3: { n: NOTE_FREQ.A4, len: 3 }, 6: { n: NOTE_FREQ.C5, len: 6 }, 12: { n: NOTE_FREQ.G4, len: 4 } },
+        3: { 0: { n: NOTE_FREQ.A4, len: 10 }, 10: { n: NOTE_FREQ.G4, len: 2 }, 12: { n: NOTE_FREQ.E4, len: 4 } },
+        4: { 0: { n: NOTE_FREQ.D4, len: 3 }, 3: { n: NOTE_FREQ.F4, len: 3 }, 6: { n: NOTE_FREQ.A4, len: 4 }, 10: { n: NOTE_FREQ.D5, len: 6 } },
+        5: { 0: { n: NOTE_FREQ.Bb4, len: 6 }, 6: { n: NOTE_FREQ.A4, len: 4 }, 10: { n: NOTE_FREQ.G4, len: 6 } },
+        6: { 0: { n: NOTE_FREQ.F4, len: 3 }, 3: { n: NOTE_FREQ.A4, len: 3 }, 6: { n: NOTE_FREQ.D5, len: 6 }, 12: { n: NOTE_FREQ.C5, len: 4 } },
+        7: { 0: { n: NOTE_FREQ.A4, len: 6 }, 6: { n: NOTE_FREQ.G4, len: 2 }, 8: { n: NOTE_FREQ.A4, len: 4 }, 12: { n: NOTE_FREQ.Cs5, len: 4 } },
+      };
+      const hit = heroicTheme[mBar]?.[s];
+      if (hit) {
+        this.orchBrass(hit.n, time, sixteenth * hit.len * 0.96, movement === 3 ? 0.19 : 0.165, 0.15);
+        if (movement === 3) {
+          // Soaring high octave violins double the brass in the Finale!
+          this.orchStringLegato(hit.n * 2, time, sixteenth * hit.len * 1.05, 0.115, -0.22);
+        }
+      }
+    } else if (movement === 2) {
+      // Movement III: CATHEDRAL CRUSADE — Sweeping Violin melody in G minor + Brass counter-stabs
+      const crusadeTheme: Record<number, Record<number, { n: number; len: number }>> = {
+        0: { 0: { n: NOTE_FREQ.G5, len: 6 }, 6: { n: NOTE_FREQ.F5, len: 4 }, 10: { n: NOTE_FREQ.D5, len: 6 } },
+        1: { 0: { n: NOTE_FREQ.Eb5, len: 6 }, 6: { n: NOTE_FREQ.G5, len: 6 }, 12: { n: NOTE_FREQ.F5, len: 4 } },
+        2: { 0: { n: NOTE_FREQ.A5, len: 8 }, 8: { n: NOTE_FREQ.F5, len: 4 }, 12: { n: NOTE_FREQ.C5, len: 4 } },
+        3: { 0: { n: NOTE_FREQ.D5, len: 12 }, 12: { n: NOTE_FREQ.F5, len: 4 } },
+        4: { 0: { n: NOTE_FREQ.G5, len: 4 }, 4: { n: NOTE_FREQ.A5, len: 4 }, 8: { n: NOTE_FREQ.Bb5, len: 8 } },
+        5: { 0: { n: NOTE_FREQ.G5, len: 6 }, 6: { n: NOTE_FREQ.F5, len: 4 }, 10: { n: NOTE_FREQ.Eb5, len: 6 } },
+        6: { 0: { n: NOTE_FREQ.F5, len: 6 }, 6: { n: NOTE_FREQ.D5, len: 6 }, 12: { n: NOTE_FREQ.Bb4, len: 4 } },
+        7: { 0: { n: NOTE_FREQ.E5, len: 8 }, 8: { n: NOTE_FREQ.Cs5, len: 8 } },
+      };
+      const vHit = crusadeTheme[mBar]?.[s];
+      if (vHit) {
+        this.orchStringLegato(vHit.n, time, sixteenth * vHit.len * 1.06, 0.145, 0.24);
+      }
+      if (s === 0 || s === 10) {
+        this.orchBrass(h.root * 2, time, sixteenth * 3.2, 0.13, -0.2);
+      }
+    }
+  }
+
+  /**
+   * TENSION OVERDRIVE: "Final Reckoning" (134 BPM, 16-bar high-stakes siege score)
+   * Plays when an Ancient Core's shield drops or Wave Tier V+ arrives.
+   */
+  private scheduleTensionReckoning(step: number, time: number, sixteenth: number): void {
+    const bar = Math.floor(step / 16); // 0..15
+    const s = step % 16;
+
+    const tensionProg = [
+      { root: NOTE_FREQ.D2, organ: [NOTE_FREQ.D2, NOTE_FREQ.A2, NOTE_FREQ.D3, NOTE_FREQ.F3], choir: [NOTE_FREQ.D4, NOTE_FREQ.F4, NOTE_FREQ.A4, NOTE_FREQ.D5], spicc: [NOTE_FREQ.D3, NOTE_FREQ.F3, NOTE_FREQ.A3, NOTE_FREQ.D4] },
+      { root: NOTE_FREQ.Eb2, organ: [NOTE_FREQ.Eb2, NOTE_FREQ.Bb2, NOTE_FREQ.Eb3, NOTE_FREQ.G3], choir: [NOTE_FREQ.Eb4, NOTE_FREQ.G4, NOTE_FREQ.Bb4, NOTE_FREQ.Eb5], spicc: [NOTE_FREQ.Eb3, NOTE_FREQ.G3, NOTE_FREQ.Bb3, NOTE_FREQ.Eb4] },
+      { root: NOTE_FREQ.C2, organ: [NOTE_FREQ.C2, NOTE_FREQ.G2, NOTE_FREQ.C3, NOTE_FREQ.E3], choir: [NOTE_FREQ.C4, NOTE_FREQ.E4, NOTE_FREQ.G4, NOTE_FREQ.C5], spicc: [NOTE_FREQ.C3, NOTE_FREQ.E3, NOTE_FREQ.G3, NOTE_FREQ.C4] },
+      { root: NOTE_FREQ.A1, organ: [NOTE_FREQ.A1, NOTE_FREQ.E2, NOTE_FREQ.A2, NOTE_FREQ.Cs3], choir: [NOTE_FREQ.E4, NOTE_FREQ.A4, NOTE_FREQ.Cs5], spicc: [NOTE_FREQ.A2, NOTE_FREQ.Cs3, NOTE_FREQ.E3, NOTE_FREQ.A3] },
+    ];
+    const h = tensionProg[bar % 4];
+
+    // Relentless double-time Taiko + Timpani + Snare + Anvil siege rhythm
+    if (s === 0 || s === 3 || s === 6 || s === 8 || s === 11 || s === 14) {
+      this.orchTaiko(time, s === 0 || s === 8 ? 0.38 : 0.25, s === 0 ? 94 : 114);
+    }
+    if (s === 0 || s === 6 || s === 12) {
+      this.orchTimpani(h.root, time, s === 0 ? 0.32 : 0.22, 0.38);
     }
     if (s === 4 || s === 12) {
-      this.musicSnare(time, tension ? 0.24 : 0.19);
+      this.orchSnare(time, 0.24, false);
+      this.orchAnvil(time, 0.095, s === 4 ? -0.36 : 0.36);
+    } else if (s % 2 === 1) {
+      this.orchSnare(time, 0.075, true);
     }
-    // Crisp hi-hat groove (16ths in tension, offbeat 8ths + ghost 16ths in battle)
-    if (tension ? s % 2 === 0 || s === 15 : s % 2 === 0) {
-      this.musicHat(time, s % 4 === 2 ? 0.085 : 0.042);
-    }
-    // Bar 4 & 8 tom turnaround fill
-    if ((bar === 3 || bar === 7) && (s === 13 || s === 14 || s === 15)) {
-      this.musicKick(time, 0.26, 130 - (s - 13) * 22);
-    }
-
-    // 2. Driving Dark Synth-Bass Ostinato (galloping eighth/sixteenth pulse)
-    if (s % 2 === 0) {
-      const octUp = s === 6 || s === 14 ? 2 : 1;
-      const bassNote = s === 10 ? barData.fifth : barData.root * octUp;
-      this.musicBass(bassNote, time, sixteenth * 1.75, tension ? 0.23 : 0.2, tension ? 780 : 580);
+    if (s === 0 && bar % 4 === 0) {
+      this.orchCymbal(time, 0.22, 1.9);
+      this.orchTubularBell(NOTE_FREQ.D4, time, 0.12, 2.2, 0.28);
     }
 
-    // 3. Gothic Cathedral Pipe-Organ / Dark Brass Chords
-    if (s === 0) {
-      this.musicPad(barData.chord, time, sixteenth * 14.5, tension ? 0.15 : 0.125, tension ? 1800 : 1280);
-    } else if (tension && s === 8) {
-      // Rhythmic brass swell on beat 3 during tension
-      this.musicPad(barData.chord.map((f) => f * 2), time, sixteenth * 5.5, 0.085, 2200);
+    // Relentless 16th-note spiccato strings
+    const spFreq = h.spicc[s % 4] * (s >= 8 ? 2 : 1);
+    this.orchSpiccato(spFreq, time, sixteenth * 1.05, s % 4 === 0 ? 0.13 : 0.09, s % 2 === 0 ? -0.35 : 0.35);
+
+    // Urgent Choir & Pipe Organ half-bar stabs
+    if (s === 0 || s === 8) {
+      this.orchLowBass(h.root, time, sixteenth * 7.2, 0.22);
+      this.orchPipeOrgan(h.organ, time, sixteenth * 7.6, 0.125, 2500);
+      this.orchChoir(h.choir, time, sixteenth * 7.4, 0.19, s === 0 ? 'ah' : 'eh');
     }
 
-    // 4. Heroic Arena Lead Motif (Bars 0–3: rhythmic crystalline arpeggio; Bars 4–7: soaring Gothic-Brass melody!)
-    if (bar < 4) {
-      const arpNotes = [
-        barData.chord[0] * 2,
-        barData.chord[1] * 2,
-        barData.chord[2] * 2,
-        barData.chord[1] * 2,
-      ];
-      if (s === 0 || s === 3 || s === 6 || s === 8 || s === 11 || s === 14) {
-        const idx = (s === 0 ? 0 : s === 3 ? 1 : s === 6 ? 2 : s === 8 ? 3 : s === 11 ? 2 : 1);
-        this.musicPluck(arpNotes[idx], time, sixteenth * 2.2, 0.09);
-      }
-    } else {
-      // Heroic theme across bars 4..7 (D minor heroic hook)
-      const motifByBar: Record<number, Record<number, { n: number; len: number }>> = {
-        4: {
-          0: { n: NOTE_FREQ.D4, len: 3 },
-          3: { n: NOTE_FREQ.F4, len: 3 },
-          6: { n: NOTE_FREQ.A4, len: 4 },
-          10: { n: NOTE_FREQ.G4, len: 2 },
-          12: { n: NOTE_FREQ.F4, len: 4 },
-        },
-        5: {
-          0: { n: NOTE_FREQ.G4, len: 3 },
-          3: { n: NOTE_FREQ.Bb4, len: 3 },
-          6: { n: NOTE_FREQ.A4, len: 4 },
-          10: { n: NOTE_FREQ.G4, len: 2 },
-          12: { n: NOTE_FREQ.D4, len: 4 },
-        },
-        6: {
-          0: { n: NOTE_FREQ.F4, len: 3 },
-          3: { n: NOTE_FREQ.A4, len: 3 },
-          6: { n: NOTE_FREQ.D5, len: 6 },
-          12: { n: NOTE_FREQ.C5, len: 4 },
-        },
-        7: {
-          0: { n: NOTE_FREQ.A4, len: 6 },
-          6: { n: NOTE_FREQ.G4, len: 2 },
-          8: { n: NOTE_FREQ.A4, len: 4 },
-          12: { n: NOTE_FREQ.Cs5, len: 4 },
-        },
-      };
-      const hit = motifByBar[bar]?.[s];
-      if (hit) {
-        this.musicLead(hit.n, time, sixteenth * hit.len * 0.95, tension ? 0.13 : 0.11);
-      }
+    // Blazing Brass Battle Call
+    const callNotes = [NOTE_FREQ.D5, NOTE_FREQ.F5, NOTE_FREQ.Eb5, NOTE_FREQ.Cs5];
+    if (s === 0 || s === 3 || s === 6 || s === 10) {
+      const baseN = callNotes[bar % 4];
+      const n = s === 3 ? baseN * 1.122 : s === 6 ? baseN * 1.25 : s === 10 ? baseN * 0.89 : baseN;
+      this.orchBrass(n, time, sixteenth * 2.6, 0.18, s % 2 === 0 ? 0.22 : -0.22);
     }
   }
 
-  // === MUSIC ENGINE INSTRUMENT VOICES (ROUTED TO musicBus) ===
+  // === SYMPHONIC ORCHESTRAL INSTRUMENT VOICES ===
 
-  private musicKick(time: number, vol: number, startHz = 112): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.musicBus) return;
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(startHz, time);
-    osc.frequency.exponentialRampToValueAtTime(34, time + 0.14);
-
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, time);
-    g.gain.linearRampToValueAtTime(vol, time + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.19);
-
-    osc.connect(g);
-    g.connect(this.musicBus);
-    osc.start(time);
-    osc.stop(time + 0.21);
+  private connectWithPan(
+    node: AudioNode,
+    pan: number,
+    dest: GainNode,
+    reverbAmt = 0
+  ): void {
+    const ctx = this.ctx!;
+    let out: AudioNode = node;
+    if (typeof ctx.createStereoPanner === 'function' && pan !== 0) {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-0.85, Math.min(0.85, pan));
+      node.connect(panner);
+      out = panner;
+    }
+    out.connect(dest);
+    if (reverbAmt > 0 && this.reverbSend) {
+      const wet = ctx.createGain();
+      wet.gain.value = reverbAmt;
+      out.connect(wet);
+      wet.connect(this.reverbSend);
+    }
   }
 
-  private musicSnare(time: number, vol: number): void {
+  /** Grand Cathedral Pipe Organ (16' Sub + 8' Principal + 4' Octave + 2 2/3' Nazard stops) */
+  private orchPipeOrgan(
+    freqs: number[],
+    time: number,
+    dur: number,
+    vol: number,
+    cutoff: number,
+    dest?: GainNode
+  ): void {
     const ctx = this.ctx;
-    if (!ctx || !this.musicBus || !this.pinkNoise) return;
-
-    // Punchy drum body
-    const osc = ctx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(195, time);
-    osc.frequency.exponentialRampToValueAtTime(105, time + 0.07);
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(vol * 0.7, time);
-    og.gain.exponentialRampToValueAtTime(0.0001, time + 0.09);
-    osc.connect(og);
-    og.connect(this.musicBus);
-    osc.start(time);
-    osc.stop(time + 0.1);
-
-    // Filtered noise snare snap
-    const src = ctx.createBufferSource();
-    src.buffer = this.pinkNoise;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(1900, time);
-    bp.Q.value = 0.9;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(vol, time);
-    ng.gain.exponentialRampToValueAtTime(0.0001, time + 0.14);
-    src.connect(bp);
-    bp.connect(ng);
-    ng.connect(this.musicBus);
-    src.start(time, Math.random() * 0.5, 0.16);
-    src.stop(time + 0.17);
-  }
-
-  private musicHat(time: number, vol: number): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.musicBus || !this.whiteNoise) return;
-    const src = ctx.createBufferSource();
-    src.buffer = this.whiteNoise;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.setValueAtTime(6800, time);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vol, time);
-    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.048);
-    src.connect(hp);
-    hp.connect(g);
-    g.connect(this.musicBus);
-    src.start(time, Math.random() * 0.6, 0.055);
-    src.stop(time + 0.06);
-  }
-
-  private musicBass(freq: number, time: number, dur: number, vol: number, cutoff: number): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.musicBus) return;
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, time);
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
 
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.Q.value = 2.2;
-    lp.frequency.setValueAtTime(cutoff, time);
-    lp.frequency.exponentialRampToValueAtTime(Math.max(120, cutoff * 0.35), time + dur);
+    lp.Q.value = 0.75;
+    lp.frequency.setValueAtTime(cutoff * 0.72, time);
+    lp.frequency.linearRampToValueAtTime(cutoff, time + Math.min(0.28, dur * 0.3));
+    lp.frequency.exponentialRampToValueAtTime(Math.max(280, cutoff * 0.55), time + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + Math.min(0.11, dur * 0.18));
+    g.gain.setValueAtTime(vol * 0.92, time + Math.max(0.12, dur * 0.82));
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    freqs.forEach((f, idx) => {
+      // 8' Principal (rich sawtooth)
+      const p8 = ctx.createOscillator();
+      p8.type = 'sawtooth';
+      p8.frequency.setValueAtTime(f * (idx % 2 === 0 ? 0.9985 : 1.0018), time);
+      p8.connect(lp);
+      p8.start(time);
+      p8.stop(time + dur + 0.05);
+
+      // 4' Octave stop (warm triangle, gives bright cathedral pipe sheen)
+      const p4 = ctx.createOscillator();
+      p4.type = 'triangle';
+      p4.frequency.setValueAtTime(f * 2.002, time);
+      const p4g = ctx.createGain();
+      p4g.gain.value = 0.42;
+      p4.connect(p4g);
+      p4g.connect(lp);
+      p4.start(time);
+      p4.stop(time + dur + 0.05);
+
+      // 2 2/3' Nazard/Quint harmonic on root & fifth for unmistakable Gothic pipe timbre
+      if (idx === 0 || idx === 1) {
+        const quint = ctx.createOscillator();
+        quint.type = 'sine';
+        quint.frequency.setValueAtTime(f * 3, time);
+        const qg = ctx.createGain();
+        qg.gain.value = 0.16;
+        quint.connect(qg);
+        qg.connect(lp);
+        quint.start(time);
+        quint.stop(time + dur + 0.05);
+      }
+    });
+
+    lp.connect(g);
+    this.connectWithPan(g, 0, target, 0.48);
+  }
+
+  /** Real Formant-Filtered Cathedral Choir (detuned sawtooth chorus through 3 vowel bandpass formants) */
+  private orchChoir(
+    freqs: number[],
+    time: number,
+    dur: number,
+    vol: number,
+    vowel: 'ah' | 'ooh' | 'eh',
+    dest?: GainNode
+  ): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
+
+    const [f1, f2, f3] = VOWEL_FORMANTS[vowel];
+    const sourceBus = ctx.createGain();
+    sourceBus.gain.value = 1 / Math.max(1.5, Math.sqrt(freqs.length));
+
+    // Gentle human vocal vibrato (5.3 Hz)
+    const vib = ctx.createOscillator();
+    vib.type = 'sine';
+    vib.frequency.setValueAtTime(5.3, time);
+    const vibGain = ctx.createGain();
+    vibGain.gain.setValueAtTime(0.001, time);
+    vibGain.gain.linearRampToValueAtTime(3.2, time + Math.min(0.45, dur * 0.4));
+    vib.connect(vibGain);
+    vib.start(time);
+    vib.stop(time + dur + 0.08);
+
+    for (const f of freqs) {
+      for (const detune of [-7, 6.5]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(f, time);
+        osc.detune.setValueAtTime(detune, time);
+        vibGain.connect(osc.frequency);
+        osc.connect(sourceBus);
+        osc.start(time);
+        osc.stop(time + dur + 0.08);
+      }
+    }
+
+    const outGain = ctx.createGain();
+    outGain.gain.setValueAtTime(0.0001, time);
+    outGain.gain.linearRampToValueAtTime(vol, time + Math.min(0.28, dur * 0.32));
+    outGain.gain.setValueAtTime(vol * 0.9, time + Math.max(0.3, dur * 0.76));
+    outGain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    // 3 parallel vocal tract formant resonators
+    const formants: Array<{ freq: number; q: number; gain: number }> = [
+      { freq: f1, q: 4.5, gain: 0.95 },
+      { freq: f2, q: 6.2, gain: 0.65 },
+      { freq: f3, q: 7.5, gain: 0.28 },
+    ];
+    for (const fm of formants) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(fm.freq, time);
+      bp.Q.value = fm.q;
+      const fg = ctx.createGain();
+      fg.gain.value = fm.gain;
+      sourceBus.connect(bp);
+      bp.connect(fg);
+      fg.connect(outGain);
+    }
+
+    this.connectWithPan(outGain, 0, target, 0.58);
+  }
+
+  /** Sweeping Bowed Legato Symphonic Strings with warm vibrato */
+  private orchStringLegato(
+    freq: number,
+    time: number,
+    dur: number,
+    vol: number,
+    pan = 0,
+    dest?: GainNode
+  ): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 1.1;
+    lp.frequency.setValueAtTime(Math.min(3400, freq * 3.8), time);
+    lp.frequency.linearRampToValueAtTime(Math.min(4600, freq * 5.2), time + dur * 0.45);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(420, freq * 2.2), time + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + Math.min(0.16, dur * 0.28));
+    g.gain.setValueAtTime(vol * 0.88, time + Math.max(0.18, dur * 0.78));
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    const vib = ctx.createOscillator();
+    vib.type = 'sine';
+    vib.frequency.setValueAtTime(5.6, time);
+    const vibG = ctx.createGain();
+    vibG.gain.setValueAtTime(0.001, time);
+    vibG.gain.linearRampToValueAtTime(freq * 0.006, time + Math.min(0.28, dur * 0.4));
+    vib.connect(vibG);
+    vib.start(time);
+    vib.stop(time + dur + 0.05);
+
+    for (const det of [-8, 0, 8.5]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, time);
+      osc.detune.setValueAtTime(det, time);
+      vibG.connect(osc.frequency);
+      osc.connect(lp);
+      osc.start(time);
+      osc.stop(time + dur + 0.05);
+    }
+
+    lp.connect(g);
+    this.connectWithPan(g, pan, target, 0.44);
+  }
+
+  /** Crisp Short-Bowed 16th-Note Spiccato Strings (epic orchestral battle momentum) */
+  private orchSpiccato(freq: number, time: number, dur: number, vol: number, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicBus) return;
+
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'lowpass';
+    bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(Math.min(3600, freq * 5.2), time);
+    bp.frequency.exponentialRampToValueAtTime(Math.max(360, freq * 1.9), time + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.014);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    for (const det of [-5.5, 5.5]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, time);
+      osc.detune.setValueAtTime(det, time);
+      osc.connect(bp);
+      osc.start(time);
+      osc.stop(time + dur + 0.02);
+    }
+
+    bp.connect(g);
+    this.connectWithPan(g, pan, this.musicBus, 0.24);
+  }
+
+  /** Heroic French Horn & Orchestral Brass Ensemble (warm saturation + brass attack flare) */
+  private orchBrass(
+    freq: number,
+    time: number,
+    dur: number,
+    vol: number,
+    pan = 0,
+    dest?: GainNode
+  ): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
+
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = this.brassWarmCurve;
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 1.9;
+    // Characteristic brass flare: filter blooms open on attack, then settles warmly
+    lp.frequency.setValueAtTime(Math.max(320, freq * 1.3), time);
+    lp.frequency.exponentialRampToValueAtTime(Math.min(4200, freq * 6.5), time + Math.min(0.085, dur * 0.25));
+    lp.frequency.exponentialRampToValueAtTime(Math.max(480, freq * 2.4), time + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.032);
+    g.gain.setValueAtTime(vol * 0.85, time + Math.max(0.05, dur * 0.72));
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    for (const det of [-6, 5.5]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, time);
+      osc.detune.setValueAtTime(det, time);
+      osc.connect(shaper);
+      osc.start(time);
+      osc.stop(time + dur + 0.04);
+    }
+
+    shaper.connect(lp);
+    lp.connect(g);
+    this.connectWithPan(g, pan, target, 0.42);
+  }
+
+  /** Deep Contrabass & Tuba Foundation */
+  private orchLowBass(freq: number, time: number, dur: number, vol: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicBus) return;
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.Q.value = 1.4;
+    lp.frequency.setValueAtTime(420, time);
+    lp.frequency.exponentialRampToValueAtTime(160, time + dur);
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.025);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    const saw = ctx.createOscillator();
+    saw.type = 'sawtooth';
+    saw.frequency.setValueAtTime(freq, time);
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(freq, time);
+
+    saw.connect(lp);
+    sub.connect(lp);
+    lp.connect(g);
+    g.connect(this.musicBus);
+
+    saw.start(time);
+    sub.start(time);
+    saw.stop(time + dur + 0.03);
+    sub.stop(time + dur + 0.03);
+  }
+
+  /** Tuned Orchestral Timpani matching chord roots */
+  private orchTimpani(
+    rootFreq: number,
+    time: number,
+    vol: number,
+    dur = 0.55,
+    dest?: GainNode
+  ): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
+
+    const baseHz = Math.max(55, Math.min(140, rootFreq));
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(baseHz * 1.42, time);
+    osc.frequency.exponentialRampToValueAtTime(baseHz, time + 0.065);
+    osc.frequency.exponentialRampToValueAtTime(baseHz * 0.96, time + dur);
+
+    // Kettle drum overtone membrane
+    const ov = ctx.createOscillator();
+    ov.type = 'triangle';
+    ov.frequency.setValueAtTime(baseHz * 1.98, time);
+    ov.frequency.exponentialRampToValueAtTime(baseHz * 1.5, time + dur * 0.5);
+    const ovg = ctx.createGain();
+    ovg.gain.setValueAtTime(vol * 0.28, time);
+    ovg.gain.exponentialRampToValueAtTime(0.0001, time + dur * 0.45);
 
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, time);
     g.gain.linearRampToValueAtTime(vol, time + 0.008);
     g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
 
-    osc.connect(lp);
-    lp.connect(g);
-    g.connect(this.musicBus);
+    osc.connect(g);
+    ov.connect(ovg);
+    ovg.connect(g);
+    this.connectWithPan(g, -0.18, target, 0.34);
+
     osc.start(time);
+    ov.start(time);
     osc.stop(time + dur + 0.03);
+    ov.stop(time + dur + 0.03);
   }
 
-  private musicPad(freqs: number[], time: number, dur: number, vol: number, cutoff: number): void {
+  /** Deep Cinematic Taiko War Drum */
+  private orchTaiko(time: number, vol: number, startHz = 104): void {
     const ctx = this.ctx;
     if (!ctx || !this.musicBus) return;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.Q.value = 0.8;
-    lp.frequency.setValueAtTime(cutoff * 0.7, time);
-    lp.frequency.linearRampToValueAtTime(cutoff, time + dur * 0.35);
-    lp.frequency.exponentialRampToValueAtTime(Math.max(240, cutoff * 0.45), time + dur);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(startHz, time);
+    osc.frequency.exponentialRampToValueAtTime(34, time + 0.16);
+
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = this.softClipCurve;
 
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, time);
-    g.gain.linearRampToValueAtTime(vol, time + Math.min(0.18, dur * 0.25));
-    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+    g.gain.linearRampToValueAtTime(vol, time + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.25);
 
-    for (const f of freqs) {
-      const o1 = ctx.createOscillator();
-      o1.type = 'sawtooth';
-      o1.frequency.setValueAtTime(f, time);
-      o1.connect(lp);
-      o1.start(time);
-      o1.stop(time + dur + 0.04);
+    osc.connect(shaper);
+    shaper.connect(g);
+    this.connectWithPan(g, 0, this.musicBus, 0.22);
+    osc.start(time);
+    osc.stop(time + 0.27);
 
-      const o2 = ctx.createOscillator();
-      o2.type = 'triangle';
-      o2.frequency.setValueAtTime(f * 1.004, time);
-      o2.connect(lp);
-      o2.start(time);
-      o2.stop(time + dur + 0.04);
-    }
-
-    lp.connect(g);
-    g.connect(this.musicBus);
-    if (this.reverbSend) {
-      const wet = ctx.createGain();
-      wet.gain.value = 0.26;
-      g.connect(wet);
-      wet.connect(this.reverbSend);
+    // Drumhead slap transient
+    if (this.brownNoise) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.brownNoise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(420, time);
+      bp.Q.value = 1.0;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(vol * 0.45, time);
+      ng.gain.exponentialRampToValueAtTime(0.0001, time + 0.08);
+      src.connect(bp);
+      bp.connect(ng);
+      ng.connect(this.musicBus);
+      src.start(time, Math.random() * 0.6, 0.1);
+      src.stop(time + 0.11);
     }
   }
 
-  private musicPluck(freq: number, time: number, dur: number, vol: number): void {
+  /** Orchestral Marching Snare */
+  private orchSnare(time: number, vol: number, ghost = false, dest?: GainNode): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target || !this.pinkNoise) return;
+
+    const dur = ghost ? 0.075 : 0.16;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(215, time);
+    osc.frequency.exponentialRampToValueAtTime(118, time + 0.055);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(vol * 0.55, time);
+    og.gain.exponentialRampToValueAtTime(0.0001, time + dur * 0.6);
+    osc.connect(og);
+    og.connect(target);
+    osc.start(time);
+    osc.stop(time + dur);
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.pinkNoise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2200, time);
+    bp.Q.value = 0.85;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(vol, time);
+    ng.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+    src.connect(bp);
+    bp.connect(ng);
+    this.connectWithPan(ng, 0.14, target, ghost ? 0.12 : 0.28);
+    src.start(time, Math.random() * 0.6, dur + 0.02);
+    src.stop(time + dur + 0.03);
+  }
+
+  /** Shimmering Orchestral Crash Cymbal */
+  private orchCymbal(time: number, vol: number, dur = 1.9, dest?: GainNode): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target || !this.whiteNoise) return;
+
+    const src = ctx.createBufferSource();
+    src.buffer = this.whiteNoise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(4200, time);
+    const pk = ctx.createBiquadFilter();
+    pk.type = 'peaking';
+    pk.frequency.setValueAtTime(7600, time);
+    pk.gain.value = 4;
+
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.025);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    src.connect(hp);
+    hp.connect(pk);
+    pk.connect(g);
+    this.connectWithPan(g, 0.2, target, 0.45);
+    src.start(time, Math.random() * 0.2, Math.min(1.45, dur));
+    src.stop(time + Math.min(1.48, dur));
+  }
+
+  /** Metallic Cathedral Anvil Strike */
+  private orchAnvil(time: number, vol: number, pan = 0): void {
     const ctx = this.ctx;
     if (!ctx || !this.musicBus) return;
+    const partials = [1180, 1790, 2640, 3890];
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + 0.42);
+
+    partials.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, time);
+      const pg = ctx.createGain();
+      pg.gain.value = 1 / (idx + 1);
+      osc.connect(pg);
+      pg.connect(g);
+      osc.start(time);
+      osc.stop(time + 0.45);
+    });
+    this.connectWithPan(g, pan, this.musicBus, 0.42);
+  }
+
+  /** FM Tubular Cathedral Bell (inharmonic bronze strike + cathedral bloom) */
+  private orchTubularBell(
+    freq: number,
+    time: number,
+    vol: number,
+    dur = 2.4,
+    pan = 0,
+    dest?: GainNode
+  ): void {
+    const ctx = this.ctx;
+    const target = dest ?? this.musicBus;
+    if (!ctx || !target) return;
+
+    const carrier = ctx.createOscillator();
+    const mod = ctx.createOscillator();
+    const modG = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    const g = ctx.createGain();
+
+    carrier.type = 'sine';
+    carrier.frequency.setValueAtTime(freq, time);
+    mod.type = 'sine';
+    mod.frequency.setValueAtTime(freq * 2.756, time); // true tubular bell overtone ratio
+    modG.gain.setValueAtTime(freq * 1.9, time);
+    modG.gain.exponentialRampToValueAtTime(2, time + dur * 0.55);
+
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(5200, time);
+    lp.frequency.exponentialRampToValueAtTime(980, time + dur);
+
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.linearRampToValueAtTime(vol, time + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+
+    mod.connect(modG);
+    modG.connect(carrier.frequency);
+    carrier.connect(lp);
+    lp.connect(g);
+    this.connectWithPan(g, pan, target, 0.58);
+
+    mod.start(time);
+    carrier.start(time);
+    mod.stop(time + dur + 0.04);
+    carrier.stop(time + dur + 0.04);
+  }
+
+  /** Shimmering Concert Arcane Harp */
+  private orchHarp(freq: number, time: number, dur: number, vol: number, pan = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.musicBus) return;
+
     const carrier = ctx.createOscillator();
     const mod = ctx.createOscillator();
     const modG = ctx.createGain();
@@ -1304,12 +2113,12 @@ class GameAudio {
     carrier.frequency.setValueAtTime(freq, time);
     mod.type = 'sine';
     mod.frequency.setValueAtTime(freq * 2, time);
-    modG.gain.setValueAtTime(freq * 0.85, time);
-    modG.gain.exponentialRampToValueAtTime(1, time + dur * 0.6);
+    modG.gain.setValueAtTime(freq * 0.72, time);
+    modG.gain.exponentialRampToValueAtTime(1, time + dur * 0.45);
 
     lp.type = 'lowpass';
-    lp.frequency.setValueAtTime(3600, time);
-    lp.frequency.exponentialRampToValueAtTime(720, time + dur);
+    lp.frequency.setValueAtTime(4200, time);
+    lp.frequency.exponentialRampToValueAtTime(840, time + dur);
 
     g.gain.setValueAtTime(0.0001, time);
     g.gain.linearRampToValueAtTime(vol, time + 0.006);
@@ -1319,59 +2128,12 @@ class GameAudio {
     modG.connect(carrier.frequency);
     carrier.connect(lp);
     lp.connect(g);
-    g.connect(this.musicBus);
-
-    if (this.reverbSend) {
-      const wet = ctx.createGain();
-      wet.gain.value = 0.28;
-      g.connect(wet);
-      wet.connect(this.reverbSend);
-    }
+    this.connectWithPan(g, pan, this.musicBus, 0.42);
 
     mod.start(time);
     carrier.start(time);
     mod.stop(time + dur + 0.03);
     carrier.stop(time + dur + 0.03);
-  }
-
-  private musicLead(freq: number, time: number, dur: number, vol: number): void {
-    const ctx = this.ctx;
-    if (!ctx || !this.musicBus) return;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.Q.value = 1.8;
-    lp.frequency.setValueAtTime(2800, time);
-    lp.frequency.exponentialRampToValueAtTime(920, time + dur);
-
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, time);
-    g.gain.linearRampToValueAtTime(vol, time + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
-
-    const o1 = ctx.createOscillator();
-    o1.type = 'sawtooth';
-    o1.frequency.setValueAtTime(freq, time);
-
-    const o2 = ctx.createOscillator();
-    o2.type = 'sawtooth';
-    o2.frequency.setValueAtTime(freq * 1.005, time);
-
-    o1.connect(lp);
-    o2.connect(lp);
-    lp.connect(g);
-    g.connect(this.musicBus);
-
-    if (this.reverbSend) {
-      const wet = ctx.createGain();
-      wet.gain.value = 0.34;
-      g.connect(wet);
-      wet.connect(this.reverbSend);
-    }
-
-    o1.start(time);
-    o2.start(time);
-    o1.stop(time + dur + 0.04);
-    o2.stop(time + dur + 0.04);
   }
 }
 

@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
+import { isVoiceSynthesisConfigured, synthesizeVoiceLine } from './server/voiceService.ts';
 import type {
   ClientToServerMessage,
   RoomSummary,
@@ -148,6 +150,38 @@ async function bootstrap() {
     }
     list.sort((a, b) => b.humans - a.humans);
     res.json({ rooms: list });
+  });
+
+  // Champion & Announcer Voice Line Synthesis API (Gemini 3.8 Flash Lite TTS + server cache)
+  app.get('/api/voice/status', (_req, res) => {
+    res.json({ available: isVoiceSynthesisConfigured() });
+  });
+
+  app.post('/api/voice/line', async (req, res) => {
+    const body = (req.body ?? {}) as { speakerId?: unknown; lineId?: unknown };
+    const speakerId = typeof body.speakerId === 'string' ? body.speakerId.trim() : '';
+    const lineId = typeof body.lineId === 'string' ? body.lineId.trim() : '';
+    if (!speakerId || !lineId) {
+      res.status(400).json({ error: 'speakerId and lineId are required.' });
+      return;
+    }
+
+    try {
+      const wavBuffer = await synthesizeVoiceLine(speakerId, lineId);
+      res.setHeader('Content-Type', 'audio/wav');
+      res.setHeader('Content-Length', String(wavBuffer.length));
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.status(200).send(wavBuffer);
+    } catch (err) {
+      const status =
+        typeof (err as { statusCode?: number })?.statusCode === 'number'
+          ? (err as { statusCode: number }).statusCode
+          : 500;
+      const message =
+        err instanceof Error ? err.message : 'Failed to synthesize champion voice line.';
+      console.error(`[VoiceAPI] ${speakerId}/${lineId} error:`, message);
+      res.status(status).json({ error: message });
+    }
   });
 
   if (IS_PROD) {

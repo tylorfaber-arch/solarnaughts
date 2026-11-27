@@ -1,4 +1,5 @@
 import { gameAudio } from './audio';
+import { gameVoices } from './voices';
 import {
   ASCENSION_INFUSIONS,
   canForgeAscension,
@@ -141,6 +142,12 @@ export class GameEngine {
   private floatingTexts: FloatingText[] = [];
   private endCinematic: (EndCinematicRenderState & { burstStage: number }) | null = null;
 
+  // Voice line milestone trackers
+  private firstBloodAnnounced = false;
+  private coreExposedAnnounced = false;
+  private prevAliveTurrets = -1;
+  private voiceTimers: number[] = [];
+
   // Input state
   private heldKeys = new Set<string>();
   private mouseDownLeft = false;
@@ -204,7 +211,34 @@ export class GameEngine {
     this.floatingTexts = [];
     this.camX = Math.max(0, p.dropPodX - this.viewW * 0.5);
     this.camY = Math.max(0, Math.min(WORLD_H - this.viewH, 260));
+    this.resetVoiceMilestones();
     gameAudio.setMusicMode('battle');
+    gameVoices.prefetchHeroVoices(heroId);
+    this.scheduleVoice(350, () => {
+      gameVoices.playAnnouncerLine('match_start', { force: true });
+    });
+  }
+
+  private resetVoiceMilestones(): void {
+    this.clearVoiceTimers();
+    this.firstBloodAnnounced = false;
+    this.coreExposedAnnounced = false;
+    this.prevAliveTurrets = -1;
+  }
+
+  private scheduleVoice(delayMs: number, fn: () => void): void {
+    const id = window.setTimeout(() => {
+      this.voiceTimers = this.voiceTimers.filter((t) => t !== id);
+      if (!this.destroyed) fn();
+    }, delayMs);
+    this.voiceTimers.push(id);
+  }
+
+  private clearVoiceTimers(): void {
+    for (const id of this.voiceTimers) {
+      window.clearTimeout(id);
+    }
+    this.voiceTimers = [];
   }
 
   private connectOnline(): void {
@@ -280,6 +314,17 @@ export class GameEngine {
         }
         if (this.phase === 'PLAYING') {
           gameAudio.setMusicMode('battle');
+          this.resetVoiceMilestones();
+          gameVoices.prefetchHeroVoices(this.heroId);
+          if ((msg.snapshot.matchTime ?? 0) < 15) {
+            this.scheduleVoice(350, () => {
+              gameVoices.playAnnouncerLine('match_start', { force: true });
+            });
+          } else {
+            this.scheduleVoice(250, () => {
+              gameVoices.playChampionLine(this.heroId, 'spawn');
+            });
+          }
         }
         this.emitHud();
       } else if (msg.type === 'state') {
@@ -364,6 +409,8 @@ export class GameEngine {
 
   public destroy(): void {
     this.destroyed = true;
+    this.clearVoiceTimers();
+    gameVoices.stop();
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
@@ -446,6 +493,10 @@ export class GameEngine {
 
   public triggerRecall(): void {
     this.queuedRecall = true;
+    const me = this.getLocalPlayerHero();
+    if (me && me.alive && !me.inDropPod) {
+      gameVoices.playChampionLine(me.heroId, 'recall', { chance: 0.75 });
+    }
   }
 
   public purchasePlayerUpgrade(upgradeId: string): boolean {
@@ -608,6 +659,22 @@ export class GameEngine {
     if (this.phase !== 'PLAYING') return;
     const anyCoreExposed = cores.some((c) => !c.shielded);
     gameAudio.setMusicMode(this.waveTier >= 5 || anyCoreExposed ? 'tension' : 'battle');
+
+    // Announcer cues for Reliquary Towers falling & Ancient Core shield dropping
+    const turrets =
+      this.mode === 'solo' && this.localSim
+        ? this.localSim.turrets
+        : Array.from(this.mirrorTurrets.values());
+    const aliveTurrets = turrets.filter((t) => t.alive).length;
+    if (this.prevAliveTurrets >= 0 && aliveTurrets < this.prevAliveTurrets) {
+      gameVoices.playAnnouncerLine('tower_down');
+    }
+    this.prevAliveTurrets = aliveTurrets;
+
+    if (anyCoreExposed && !this.coreExposedAnnounced) {
+      this.coreExposedAnnounced = true;
+      gameVoices.playAnnouncerLine('core_exposed');
+    }
   }
 
   private startEndCinematic(winner: Team): void {
@@ -619,6 +686,7 @@ export class GameEngine {
     const localWon = winner === this.playerTeam;
 
     this.clearHeldInputs();
+    this.clearVoiceTimers();
     this.endCinematic = {
       active: true,
       completed: false,
@@ -634,6 +702,16 @@ export class GameEngine {
 
     if (localWon) gameAudio.playVictoryFanfare();
     else gameAudio.playDefeatRequiem();
+
+    // Herald decree + Champion's victory/defeat closing remark
+    const playerHero = this.getLocalPlayerHero();
+    const championId = playerHero?.heroId ?? this.heroId;
+    this.scheduleVoice(850, () => {
+      gameVoices.playAnnouncerLine(localWon ? 'victory' : 'defeat', { force: true });
+    });
+    this.scheduleVoice(3650, () => {
+      gameVoices.playChampionLine(championId, localWon ? 'victory' : 'defeat', { force: true });
+    });
 
     // Opening Core Shatter Detonation
     this.addShake(19);
@@ -893,13 +971,27 @@ export class GameEngine {
 
     kin.vy = Math.min(920, kin.vy + GRAVITY * gravScale * dt);
 
-    kin.x += kin.vx * dt;
-    kin.x = Math.max(26 + h.w / 2, Math.min(WORLD_W - 26 - h.w / 2, kin.x));
+    const prevX = kin.x;
     const prevBottom = kin.y + h.h / 2;
+    const halfW = h.w / 2;
+
+    kin.x += kin.vx * dt;
+    kin.x = Math.max(26 + halfW, Math.min(WORLD_W - 26 - halfW, kin.x));
+
+    // Mirror crypt pit side walls so client prediction never clips under ground_left/ground_right
+    if (prevBottom > 966 && prevX >= 2260 - halfW && prevX <= 3140 + halfW) {
+      if (kin.x - halfW < 2260) {
+        kin.x = 2260 + halfW;
+        if (kin.vx < 0) kin.vx = 0;
+      } else if (kin.x + halfW > 3140) {
+        kin.x = 3140 - halfW;
+        if (kin.vx > 0) kin.vx = 0;
+      }
+    }
+
     kin.y += kin.vy * dt;
     kin.grounded = false;
     const newBottom = kin.y + h.h / 2;
-    const halfW = h.w / 2;
     for (const p of PLATFORMS) {
       if (!(kin.x + halfW > p.x && kin.x - halfW < p.x + p.w)) continue;
       if (p.oneWay) {
@@ -919,6 +1011,14 @@ export class GameEngine {
           kin.vy = 0;
         }
       }
+    }
+
+    // Hard solid bottom ground guarantee matching server physics
+    const floorY = kin.x >= 2260 && kin.x <= 3140 ? 1065 : 960;
+    if (kin.y + h.h / 2 > floorY) {
+      kin.y = floorY - h.h / 2;
+      if (kin.vy > 0) kin.vy = 0;
+      kin.grounded = true;
     }
   }
 
@@ -1501,6 +1601,44 @@ export class GameEngine {
             if (mine) this.addShake(4.5);
           }
         }
+
+        // Champion ability voice quips for the local player (throttled cleanly by VoiceManager)
+        if (mine) {
+          const hero = this.getLocalPlayerHero();
+          if (hero) {
+            const skill1Tags = new Set([
+              'hook_hit',
+              'spear',
+              'totem',
+              'dash',
+              'bite',
+              'dynamite',
+              'vortex',
+              'orbital',
+              'censer',
+              'flare',
+            ]);
+            const skill2Tags = new Set([
+              'rot',
+              'aegis',
+              'drone',
+              'spin',
+              'meltdown',
+              'bull',
+              'cloak',
+              'undead',
+              'contagion',
+              'blink',
+            ]);
+            if (skill1Tags.has(ev.tag)) {
+              gameVoices.playChampionLine(hero.heroId, 'skill1', {
+                chance: ev.tag === 'hook_hit' ? 0.85 : 0.55,
+              });
+            } else if (skill2Tags.has(ev.tag)) {
+              gameVoices.playChampionLine(hero.heroId, 'skill2', { chance: 0.55 });
+            }
+          }
+        }
       } else if (ev.kind === 'explosion') {
         this.spawnRing(ev.x, ev.y, ev.radius, ev.color);
         this.spawnParticles(ev.x, ev.y, '#FDE047', ev.heavy ? 24 : 12, ev.heavy ? 320 : 210, 'spark');
@@ -1539,6 +1677,9 @@ export class GameEngine {
                 (hero.upgrades['asc_siege'] ?? 0) > 0)
           );
           gameAudio.upgradeBuy(hasAsc);
+          if (hero) {
+            gameVoices.playChampionLine(hero.heroId, 'upgrade', { chance: 0.65 });
+          }
         }
       } else if (ev.kind === 'jump') {
         this.spawnParticles(
@@ -1563,11 +1704,24 @@ export class GameEngine {
         if (ev.heroEntityId === this.playerEntityId) {
           gameAudio.dropPodSlam();
           this.addShake(9);
+          const hero = this.getLocalPlayerHero();
+          if (hero) {
+            gameVoices.playChampionLine(hero.heroId, 'spawn');
+          }
         }
       } else if (ev.kind === 'kill') {
         this.spawnParticles(ev.x, ev.y, '#F59E0B', 24, 260, 'spark');
         this.spawnParticles(ev.x, ev.y, ev.team === 'blue' ? '#38BDF8' : '#F43F5E', 16, 200, 'square');
         this.spawnRing(ev.x, ev.y, 72, '#FBBF24');
+        if (!this.firstBloodAnnounced) {
+          this.firstBloodAnnounced = true;
+          gameVoices.playAnnouncerLine('first_blood');
+        } else if (ev.killerId === this.playerEntityId) {
+          const hero = this.getLocalPlayerHero();
+          if (hero) {
+            gameVoices.playChampionLine(hero.heroId, 'kill');
+          }
+        }
         if (ev.killerId === this.playerEntityId || ev.victimId === this.playerEntityId) {
           gameAudio.killBanner();
           this.hitstopTimer = 0.055;
