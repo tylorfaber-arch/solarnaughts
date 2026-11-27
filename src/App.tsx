@@ -9,6 +9,7 @@ import type { MatchMode } from './game/netTypes';
 import { ensureArenaArtLoaded } from './game/sprites';
 import type { Difficulty, HeroId, HudSnapshot, Team } from './game/types';
 import { gameVoices, type ActiveVoiceSubtitle } from './game/voices';
+import { padUi } from './game/gamepad';
 
 function readInitialLobbyFromUrl(): { roomCode: string; teamPref: 'auto' | Team } {
   const params = new URLSearchParams(window.location.search);
@@ -276,6 +277,21 @@ export default function App() {
   const handleRecall = useCallback(() => {
     engineRef.current?.triggerRecall();
   }, []);
+
+  // Controller ownership: menus get the gamepad whenever one is on screen, the match gets it otherwise.
+  const hudReady = hud !== null;
+  const hudFinished = hud?.phase === 'VICTORY' || hud?.phase === 'DEFEAT';
+  const hudCinematicDone = !hud?.endCinematic || hud.endCinematic.completed;
+  useEffect(() => {
+    const endModal = hudFinished && hudCinematicDone;
+    padUi.menuActive = !launchConfig || !hudReady || shopOpen || pauseMenuOpen || endModal;
+    const closeShop = () => setShopOpen(false);
+    padUi.actions = shopOpen
+      ? { back: closeShop, x: closeShop, start: closeShop }
+      : pauseMenuOpen
+        ? { back: handleResume, start: handleResume }
+        : {};
+  }, [launchConfig, hudReady, hudFinished, hudCinematicDone, shopOpen, pauseMenuOpen, handleResume]);
 
   if (!launchConfig) {
     return (

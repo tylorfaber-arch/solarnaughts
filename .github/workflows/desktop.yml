@@ -1,0 +1,53 @@
+# Builds the desktop app for Windows, macOS and Linux (incl. Steam Deck) on every push to main
+# and on demand (Actions tab → Desktop builds → Run workflow). Download the results from the run's
+# "Artifacts" section. The *-unpacked / mac folders are what you upload to Steam (one depot per OS).
+name: Desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build the game (web bundle)
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Package desktop app
+        working-directory: desktop
+        env:
+          # Unsigned for now; add signing secrets here later (CSC_LINK / APPLE_ID ...).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci
+          npm run dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solarnauts-${{ runner.os }}
+          path: |
+            desktop/release/*.AppImage
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/linux-unpacked/
+            desktop/release/win-unpacked/
+            desktop/release/mac-universal/
+          if-no-files-found: error
+          retention-days: 14

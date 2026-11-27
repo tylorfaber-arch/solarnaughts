@@ -1,3 +1,5 @@
+import { roomInviteUrl } from '../platform';
+import { usePadMode } from './usePadMode';
 import { useState } from 'react';
 import { Check, Crown, Link2, RefreshCw, RotateCcw, Users } from 'lucide-react';
 import { HERO_LIST, HERO_MAP } from '../game/heroes';
@@ -155,6 +157,7 @@ export function PauseModal({
   onToggleVoices,
   onExitToTitle,
 }: PauseModalProps) {
+  const padMode = usePadMode();
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -164,7 +167,7 @@ export function PauseModal({
 
   const handleCopyInvite = () => {
     if (!hud.network.roomId) return;
-    const url = `${window.location.origin}/?room=${encodeURIComponent(hud.network.roomId)}`;
+    const url = roomInviteUrl(hud.network.roomId);
     navigator.clipboard?.writeText(url).catch(() => {});
     setCopiedInvite(true);
     window.setTimeout(() => setCopiedInvite(false), 1800);
@@ -268,7 +271,20 @@ export function PauseModal({
         ) : (
           <>
             <div className="rounded-xl bg-[#070910] border border-slate-800 p-3.5 text-xs text-slate-300 grid grid-cols-2 gap-y-1.5 gap-x-3">
-              <span><strong className="text-white">A / D</strong> Move</span>
+{padMode ? (
+                <>
+                  <span><strong className="text-white">L-Stick</strong> Move</span>
+                  <span><strong className="text-white">A</strong> Jump & Pad Launch</span>
+                  <span><strong className="text-white">B / Down</strong> Drop Through Glass</span>
+                  <span><strong className="text-white">R-Stick + RT</strong> Aim & Primary</span>
+                  <span><strong className="text-white">LB / LT</strong> Skill 1</span>
+                  <span><strong className="text-white">RB</strong> Skill 2</span>
+                  <span><strong className="text-white">X</strong> Talent Forge</span>
+                  <span><strong className="text-white">Y</strong> Recall to Sanctum</span>
+                </>
+              ) : (
+                <>
+                            <span><strong className="text-white">A / D</strong> Move</span>
               <span><strong className="text-white">W / Space</strong> Jump & Pad Launch</span>
               <span><strong className="text-white">S</strong> Drop Through Glass</span>
               <span><strong className="text-white">LMB</strong> Primary Attack</span>
@@ -276,11 +292,14 @@ export function PauseModal({
               <span><strong className="text-white">E / Shift</strong> Skill 2</span>
               <span><strong className="text-white">B</strong> Talent Forge</span>
               <span><strong className="text-white">R</strong> Recall to Sanctum</span>
+                </>
+              )}
             </div>
 
             <div className="flex flex-col gap-2.5">
               <button
                 type="button"
+                data-pad-default
                 onClick={onResume}
                 className="w-full py-2.5 px-4 rounded-xl font-display font-bold text-[#070910] bg-gradient-to-r from-amber-300 to-amber-400 hover:brightness-110 cursor-pointer"
               >
@@ -522,6 +541,7 @@ export function EndMatchModal({
             {isOnline ? (
               <button
                 type="button"
+                data-pad-default
                 onClick={onRequeueToLobby}
                 className="flex-1 py-3 px-4 rounded-xl font-display font-extrabold text-[#070910] bg-gradient-to-r from-amber-300 to-amber-400 hover:brightness-110 flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
               >
@@ -540,7 +560,8 @@ export function EndMatchModal({
 
             <button
               type="button"
-              onClick={onPlayAgain}
+              data-pad-default
+                onClick={onPlayAgain}
               className="py-3 px-4 rounded-xl text-sm font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
             >
               <RotateCcw className="w-4 h-4 text-amber-300" />
