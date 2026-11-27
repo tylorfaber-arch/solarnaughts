@@ -44,3 +44,16 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Controller highlight (see src/game/gamepadMenu.ts) */
+.pad-mode .pad-focus {
+  outline: 3px solid #fbbf24 !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(251, 191, 36, 0.22), 0 0 22px rgba(251, 191, 36, 0.35) !important;
+  position: relative;
+  z-index: 1;
+}
+.pad-mode,
+.pad-mode * {
+  cursor: none !important;
+}

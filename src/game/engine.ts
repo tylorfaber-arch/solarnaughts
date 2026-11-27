@@ -19,6 +19,8 @@ import type {
 import { renderArena, type EndCinematicRenderState } from './renderer';
 import { heroAbilityVfx } from './heroVfx';
 import { ArenaSimulation } from './sim';
+import { serverWsUrl } from '../platform';
+import { PAD, PadReader, padUi, type PadFrame } from './gamepad';
 import type {
   CoreDrillEntity,
   Difficulty,
@@ -161,6 +163,15 @@ export class GameEngine {
   private queuedSkill2 = false;
   private queuedRecall = false;
 
+  // Controller state (see gamepad.ts). Aim is a direction + distance from the hero.
+  private pad = new PadReader();
+  private padFrame: PadFrame | null = null;
+  private padWasMenu = true;
+  private padStickDown = false;
+  private padAimDirX = 1;
+  private padAimDirY = 0;
+  private padAimDist = 320;
+
   // Local client-side prediction & reconciliation state for online mode
   private predCoyote = 0;
   private predJumpBuffer = 0;
@@ -257,9 +268,7 @@ export class GameEngine {
       }
     }
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(serverWsUrl());
     this.ws = ws;
     this.wsConnected = false;
 
@@ -382,6 +391,7 @@ export class GameEngine {
       const rawDt = (ts - this.lastTs) / 1000;
       this.lastTs = ts;
       this.updateRenderResolution(rawDt);
+      this.pollGamepad();
       const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
       if (this.phase === 'VICTORY' || this.phase === 'DEFEAT') {
@@ -569,6 +579,7 @@ export class GameEngine {
   private clearHeldInputs = () => {
     this.heldKeys.clear();
     this.mouseDownLeft = false;
+    this.padFrame = null;
   };
 
   private bindInputs(): void {
@@ -596,17 +607,28 @@ export class GameEngine {
     if (this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft')) moveDir = -1;
     if (this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight')) moveDir = moveDir === -1 ? 0 : 1;
 
-    this.mouseWorldX = this.mouseScreenX + this.camX;
-    this.mouseWorldY = this.mouseScreenY + this.camY;
+    const pad = this.padFrame;
+    if (pad && moveDir === 0) {
+      if (pad.lx < -0.35 || pad.held[PAD.LEFT]) moveDir = -1;
+      else if (pad.lx > 0.35 || pad.held[PAD.RIGHT]) moveDir = 1;
+    }
+
+    if (padUi.lastDevice === 'gamepad') {
+      this.updatePadAim(playerX, playerY, pad);
+    } else {
+      this.mouseWorldX = this.mouseScreenX + this.camX;
+      this.mouseWorldY = this.mouseScreenY + this.camY;
+    }
     const aimAngle = Math.atan2(this.mouseWorldY - playerY, this.mouseWorldX - playerX);
 
     return {
       seq: ++this.inputSeq,
       moveDir,
       wantJump: this.queuedJump,
-      holdingJump: this.heldKeys.has('Space') || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp'),
+      holdingJump:
+        this.heldKeys.has('Space') || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp') || !!pad?.held[PAD.A],
       wantDrop: this.queuedDrop,
-      wantPrimary: this.mouseDownLeft,
+      wantPrimary: this.mouseDownLeft || !!pad?.held[PAD.RT],
       wantSkill1: this.queuedSkill1,
       wantSkill2: this.queuedSkill2,
       wantRecall: this.queuedRecall,
@@ -614,6 +636,112 @@ export class GameEngine {
       aimWorldX: Math.round(this.mouseWorldX),
       aimWorldY: Math.round(this.mouseWorldY),
     };
+  }
+
+  // === CONTROLLER ===
+  /**
+   * Reads the controller once per frame. Menus own it while padUi.menuActive (title, pause,
+   * talent forge, end screen); the first frame after a menu closes only resyncs, so the A press
+   * that clicked "Resume" doesn't also jump.
+   */
+  private pollGamepad(): void {
+    if (padUi.menuActive) {
+      this.padFrame = null;
+      this.padWasMenu = true;
+      return;
+    }
+    if (this.padWasMenu) {
+      this.pad.resync();
+      this.padWasMenu = false;
+      this.padFrame = null;
+      return;
+    }
+    const f = this.pad.poll();
+    this.padFrame = f;
+    if (!f) return;
+    if (f.active) padUi.setLastDevice('gamepad');
+
+    if (this.endCinematic?.active && this.endCinematic.canSkip && (f.pressed[PAD.A] || f.pressed[PAD.MENU])) {
+      this.skipEndCinematic();
+      return;
+    }
+    // Menu-level actions are routed through the same keyboard shortcuts App.tsx already handles.
+    if (f.pressed[PAD.MENU]) this.synthKey('Escape');
+    if (f.pressed[PAD.X]) this.synthKey('KeyB');
+    if (f.pressed[PAD.VIEW]) this.synthKey('Tab', 'keydown');
+    if (f.released[PAD.VIEW]) this.synthKey('Tab', 'keyup');
+
+    if (this.phase !== 'PLAYING') return;
+    if (f.pressed[PAD.A]) this.queuedJump = true;
+    const stickDown = f.ly > 0.7 && Math.abs(f.lx) < 0.6;
+    if (f.pressed[PAD.B] || f.pressed[PAD.DOWN] || (stickDown && !this.padStickDown)) this.queuedDrop = true;
+    this.padStickDown = stickDown;
+    if (f.pressed[PAD.LB] || f.pressed[PAD.LT]) this.queuedSkill1 = true;
+    if (f.pressed[PAD.RB]) this.queuedSkill2 = true;
+    if (f.pressed[PAD.Y]) this.queuedRecall = true;
+  }
+
+  private synthKey(code: string, type: 'keydown' | 'keyup' | 'tap' = 'tap'): void {
+    if (type !== 'keyup') window.dispatchEvent(new KeyboardEvent('keydown', { code, bubbles: true }));
+    if (type !== 'keydown') window.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }));
+  }
+
+  /**
+   * Right stick aims (direction + how far, for cursor-targeted skills). When the stick is released
+   * the last aim is kept relative to the hero. Light aim assist: if an enemy champion is close to
+   * the stick direction, the aim point snaps onto them.
+   */
+  private updatePadAim(playerX: number, playerY: number, pad: PadFrame | null): void {
+    if (pad) {
+      const mag = Math.hypot(pad.rx, pad.ry);
+      if (mag > 0.25) {
+        this.padAimDirX = pad.rx / mag;
+        this.padAimDirY = pad.ry / mag;
+        this.padAimDist = 170 + Math.min(1, mag) * 330;
+      } else if (Math.abs(pad.lx) > 0.35) {
+        // No right-stick input: face where you're running, keep the vertical aim.
+        const sx = Math.sign(pad.lx);
+        if (Math.sign(this.padAimDirX) !== sx) this.padAimDirX = -this.padAimDirX || sx;
+      }
+    }
+    let ax = playerX + this.padAimDirX * this.padAimDist;
+    let ay = playerY + this.padAimDirY * this.padAimDist;
+
+    const heroes = this.mode === 'solo' && this.localSim ? this.localSim.heroes : this.mirrorHeroes.values();
+    let bestScore = Infinity;
+    for (const h of heroes) {
+      if (!h.alive || h.team === this.playerTeam || h.inDropPod) continue;
+      const dx = h.x - playerX;
+      const dy = h.y - playerY;
+      const d = Math.hypot(dx, dy);
+      if (d < 1 || d > 820) continue;
+      const cos = (dx * this.padAimDirX + dy * this.padAimDirY) / d;
+      if (cos < 0.965) continue; // ~15 degree cone
+      const score = d * (2 - cos);
+      if (score < bestScore) {
+        bestScore = score;
+        ax = h.x;
+        ay = h.y;
+      }
+    }
+    this.mouseWorldX = ax;
+    this.mouseWorldY = ay;
+    this.mouseScreenX = ax - this.camX;
+    this.mouseScreenY = ay - this.camY;
+  }
+
+  private rumble(strength: number, ms: number): void {
+    if (padUi.lastDevice !== 'gamepad' || typeof navigator === 'undefined' || !navigator.getGamepads) return;
+    for (const gp of navigator.getGamepads()) {
+      const act = gp?.vibrationActuator as
+        | { playEffect?: (t: string, p: Record<string, number>) => Promise<unknown> }
+        | undefined;
+      act?.playEffect?.('dual-rumble', {
+        duration: ms,
+        strongMagnitude: Math.min(1, strength),
+        weakMagnitude: Math.min(1, strength * 0.7),
+      })?.catch(() => {});
+    }
   }
 
   // === SOLO UPDATE ===
@@ -1921,6 +2049,7 @@ export class GameEngine {
 
   private addShake(mag: number): void {
     this.shakeMag = Math.min(20, Math.max(this.shakeMag, mag));
+    if (mag >= 4) this.rumble(mag / 14, 70 + mag * 9);
   }
 
   private updateShake(dt: number): void {

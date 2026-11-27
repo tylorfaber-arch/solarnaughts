@@ -1,3 +1,5 @@
+import { roomInviteUrl } from '../platform';
+import { usePadMode } from './usePadMode';
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Link2, Mic, MicOff, Music, Volume2, VolumeX } from 'lucide-react';
 import { gameAudio } from '../game/audio';
@@ -65,6 +67,7 @@ export function TitleScreen({
   voiceError,
   onStartGame,
 }: TitleScreenProps) {
+  const padMode = usePadMode();
   const inviteRoomParam = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const rawRoom = params.get('room');
@@ -108,7 +111,7 @@ export function TitleScreen({
         .toUpperCase()
         .replace(/[^A-Z0-9-]/g, '')
         .slice(0, 12) || 'SANCTUM-1';
-    const url = `${window.location.origin}/?room=${encodeURIComponent(clean)}`;
+    const url = roomInviteUrl(clean);
     navigator.clipboard?.writeText(url).catch(() => {});
     setCopiedInvite(true);
     window.setTimeout(() => setCopiedInvite(false), 1800);
@@ -687,6 +690,7 @@ export function TitleScreen({
 
             <button
               type="button"
+              data-pad-default
               onClick={() => handleLaunch()}
               className="w-full py-3.5 px-6 rounded-xl font-display text-base font-extrabold tracking-wider text-[#070910] bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400 hover:brightness-110 active:scale-[0.99] transition-all cursor-pointer shadow-lg shadow-amber-500/20 whitespace-nowrap"
             >
@@ -699,7 +703,25 @@ export function TitleScreen({
       {/* Single Flat PC Control Bar */}
       <footer className="relative z-10 px-8 py-2.5 border-t border-amber-500/15 bg-[#070910]/92">
         <div className="max-w-[1440px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-          <span>
+{padMode ? (
+            <>
+              <span>
+                <strong className="text-slate-200">L-Stick</strong> Move ·{' '}
+                <strong className="text-slate-200">A</strong> Jump/Hover ·{' '}
+                <strong className="text-slate-200">B / Down</strong> Drop ·{' '}
+                <strong className="text-slate-200">R-Stick</strong> Aim ·{' '}
+                <strong className="text-slate-200">RT</strong> Primary ·{' '}
+                <strong className="text-slate-200">LB/LT</strong> Skill 1 ·{' '}
+                <strong className="text-slate-200">RB</strong> Skill 2 ·{' '}
+                <strong className="text-slate-200">X</strong> Talent Forge ·{' '}
+                <strong className="text-slate-200">Y</strong> Recall ·{' '}
+                <strong className="text-slate-200">View</strong> Stats
+              </span>
+              <span className="text-slate-500">Press Start to Join</span>
+            </>
+          ) : (
+            <>
+                    <span>
             <strong className="text-slate-200">A/D</strong> Move ·{' '}
             <strong className="text-slate-200">W/Space</strong> Jump/Hover ·{' '}
             <strong className="text-slate-200">S</strong> Drop ·{' '}
@@ -711,6 +733,8 @@ export function TitleScreen({
             <strong className="text-slate-200">Tab</strong> Stats
           </span>
           <span className="text-slate-500">Press Enter to Join</span>
+            </>
+          )}
         </div>
       </footer>
 

@@ -1,0 +1,77 @@
+{
+  "name": "solarnauts",
+  "productName": "Solarnauts",
+  "version": "0.1.0",
+  "description": "Solarnauts — 3v3 cathedral battle arena",
+  "author": "tylorfaber-arch",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "stage": "node stage.cjs",
+    "start": "node stage.cjs && electron .",
+    "dist": "node stage.cjs && electron-builder --publish never",
+    "dist:linux": "node stage.cjs && electron-builder --linux --publish never",
+    "dist:win": "node stage.cjs && electron-builder --win --publish never",
+    "dist:mac": "node stage.cjs && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.5.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.solarnauts.game",
+    "productName": "Solarnauts",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json",
+      "resources/icon.png",
+      "app-dist/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "dir"
+      ],
+      "category": "Game",
+      "icon": "resources/icon.png",
+      "executableName": "solarnauts",
+      "syncDesktopName": true
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "dir"
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.action-games",
+      "icon": "resources/icon.png"
+    }
+  },
+  "desktopName": "solarnauts.desktop"
+}

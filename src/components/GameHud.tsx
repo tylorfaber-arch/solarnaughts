@@ -1,3 +1,5 @@
+import { roomInviteUrl } from '../platform';
+import { usePadMode } from './usePadMode';
 import { useState } from 'react';
 import {
   Volume2,
@@ -60,6 +62,8 @@ export function GameHud({
   onTogglePause,
   onRecall,
 }: GameHudProps) {
+  const padMode = usePadMode();
+  const PAD_SLOT_LABEL: Record<string, string> = { primary: 'RT', skill1: 'LB', skill2: 'RB' };
   const [copiedRoom, setCopiedRoom] = useState(false);
   const [hoveredAbility, setHoveredAbility] = useState<'primary' | 'skill1' | 'skill2' | null>(
     null
@@ -89,7 +93,7 @@ export function GameHud({
 
   const copyRoomCode = () => {
     if (!hud.network.roomId) return;
-    const url = `${window.location.origin}/?room=${encodeURIComponent(hud.network.roomId)}`;
+    const url = roomInviteUrl(hud.network.roomId);
     navigator.clipboard?.writeText(url).catch(() => {});
     setCopiedRoom(true);
     window.setTimeout(() => setCopiedRoom(false), 1800);
@@ -626,7 +630,7 @@ export function GameHud({
                         : 'bg-slate-800/90 border border-slate-700 text-slate-300 hover:text-white'
                   }`}
                 >
-                  Talents [B]
+                  {padMode ? 'Talents [X]' : 'Talents [B]'}
                   {hud.player.affordableUpgrades > 0 && !shopOpen
                     ? ` · ${hud.player.affordableUpgrades}`
                     : ''}
@@ -642,7 +646,9 @@ export function GameHud({
                 >
                   {hud.player.recallTimer > 0
                     ? `${hud.player.recallTimer.toFixed(1)}s`
-                    : 'Recall [R]'}
+                    : padMode
+                      ? 'Recall [Y]'
+                      : 'Recall [R]'}
                 </button>
               </div>
             </div>
@@ -740,7 +746,7 @@ export function GameHud({
                     onCd ? 'text-amber-300' : 'text-slate-200'
                   }`}
                 >
-                  {onCd ? `${ab.cd.toFixed(1)}s` : ab.extraLabel ?? ab.meta.keyLabel.split(' ')[0]}
+                  {onCd ? `${ab.cd.toFixed(1)}s` : ab.extraLabel ?? (padMode ? PAD_SLOT_LABEL[ab.slot] : ab.meta.keyLabel.split(' ')[0])}
                 </span>
 
                 {/* Upgrade rank pips along top edge of ability slot */}
