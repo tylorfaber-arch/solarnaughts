@@ -1,5 +1,5 @@
 # Builds the desktop app for Windows, macOS and Linux (incl. Steam Deck) on every push to main
-# and on demand (Actions tab → Desktop builds → Run workflow). Download the results from the run's
+# and pull requests that touch the game or desktop code, and on demand (Actions tab → Desktop builds → Run workflow). Download the results from the run's
 # "Artifacts" section. The *-unpacked / mac folders are what you upload to Steam (one depot per OS).
 name: Desktop builds
 
@@ -8,6 +8,8 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**.md']
+  pull_request:
+    paths: ['desktop/**', 'src/**', 'package.json', 'bun.lock', '.github/workflows/desktop.yml']
 
 jobs:
   build:
